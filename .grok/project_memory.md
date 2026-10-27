@@ -1,0 +1,8 @@
+- User is developing AI assistant "Kushim" with 3D transparent human avatar featuring energy flows, aura, and internal glowing systems (target aesthetic from provided images/video). [2026-10-27]
+- Goal: continuous hourly improvements to avatar appearance, gestures, human-like behaviors, interactions, and speech functions to approach Gemini/Grok level naturalness. [2026-10-27]
+- Approach: research existing VRM/Three.js AI companions, MetaHuman, hologram systems; propose modular pipeline for iterative refinement. [2026-10-27]
+- Base recommendation: adapt shefixu-ai-girlfriend (R3F + three-vrm, procedural useFrame, FFT lip-sync) or xiaokeai (transparent desktop pet, full voice stack) as starting point. [2026-10-27]
+- Visual target: translucent MeshPhysical/ShaderMaterial + bone-aligned particle/line energy flows + central emissive core + Fresnel aura + post-bloom; red shoulder accents as activity state. [2026-10-27]
+- Research confirms shefixu-ai-girlfriend (R3F + three-vrm procedural useFrame + FFT lip-sync) and xiaokeai (transparent desktop pet + full local voice) as optimal bases; energy effects via custom ShaderMaterial/particle systems on bones + MeshPhysical transmission + bloom. [2026-10-27]
+- Additional high-value references: ektogamat holographic material (Fresnel + scanlines), talk2avatar (viseme-based lip-sync with Kokoro), lumi-3d-companion (gaze + click interactions), webwaifu3 (semantic memory). [2026-10-27]
+- Next optimizations: modular energy flow layer (bone-attached lines/particles driven by audio/activity), emotion-tagged gestures from LLM, improved viseme mapping, hourly delta application via Git patches or agent loop. [2026-10-27]

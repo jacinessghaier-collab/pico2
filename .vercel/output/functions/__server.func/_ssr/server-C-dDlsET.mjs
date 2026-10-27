@@ -1,0 +1,172 @@
+import { n as isGesture } from "./lock-DSiqy2QN.mjs";
+import { t as promptFor } from "./stages-C8e_oXZy.mjs";
+import { n as TSS_SERVER_FUNCTION, t as createServerFn } from "./ssr.mjs";
+//#region node_modules/.nitro/vite/services/ssr/assets/server-C-dDlsET.js
+var createServerRpc = (serverFnMeta, splitImportFn) => {
+	const url = "/_serverFn/" + serverFnMeta.id;
+	return Object.assign(splitImportFn, {
+		url,
+		serverFnMeta,
+		[TSS_SERVER_FUNCTION]: true
+	});
+};
+var hits = [];
+var voiceHits = [];
+function allow(bucket, limit) {
+	const now = Date.now();
+	while (bucket.length > 0 && now - bucket[0] > 6e4) bucket.shift();
+	if (bucket.length >= limit) return false;
+	bucket.push(now);
+	return true;
+}
+function asTurns(input) {
+	if (!input || typeof input !== "object") throw new Error("Ungültige Anfrage");
+	const rec = input;
+	if (!Array.isArray(rec.turns) || rec.turns.length === 0 || rec.turns.length > 12) throw new Error("Ungültige Anfrage");
+	const turns = rec.turns.map((item) => {
+		if (!item || typeof item !== "object") throw new Error("Ungültige Anfrage");
+		const turn = item;
+		if (turn.role !== "user" && turn.role !== "assistant") throw new Error("Ungültige Anfrage");
+		if (typeof turn.content !== "string") throw new Error("Ungültige Anfrage");
+		const content = turn.content.trim().slice(0, 1500);
+		if (!content) throw new Error("Ungültige Anfrage");
+		return {
+			role: turn.role,
+			content
+		};
+	});
+	if (turns[turns.length - 1]?.role !== "user") throw new Error("Ungültige Anfrage");
+	const hour = typeof rec.hour === "number" && Number.isFinite(rec.hour) ? Math.max(0, Math.min(1e4, Math.floor(rec.hour))) : 0;
+	const rawName = typeof rec.name === "string" ? rec.name.trim() : "";
+	return {
+		turns,
+		hour,
+		name: /^[\p{L}' -]{1,24}$/u.test(rawName) ? rawName : ""
+	};
+}
+function readReply(raw) {
+	const start = raw.indexOf("{");
+	const end = raw.lastIndexOf("}");
+	const slice = start >= 0 && end > start ? raw.slice(start, end + 1) : raw;
+	const parsed = JSON.parse(slice);
+	if (typeof parsed.say !== "string" || !parsed.say.trim()) throw new Error("Leere Antwort");
+	const gesture = typeof parsed.gesture === "string" && isGesture(parsed.gesture) ? parsed.gesture : "speak";
+	return {
+		say: parsed.say.trim().slice(0, 700),
+		gesture
+	};
+}
+async function complete(apiKey, turns, hour, name, jsonMode) {
+	const behavior = promptFor(hour);
+	return fetch("https://api.x.ai/v1/chat/completions", {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			Authorization: `Bearer ${apiKey}`
+		},
+		body: JSON.stringify({
+			model: "grok-4.5",
+			temperature: .6,
+			max_tokens: 280,
+			...jsonMode ? { response_format: { type: "json_object" } } : {},
+			messages: [{
+				role: "system",
+				content: "Du bist Kushim. Du stehst als durchsichtiger erwachsener Mensch aus cyanfarbenem Nervenlicht in einem schwarzen Raum. Ein weiß-cyaner Kern sitzt in der Brust, ein Punkt auf der Stirn, ein einziges rotes Signal in deiner rechten Schulter. Du bist kein Arzt und gibst keine Diagnose und keine Behandlungsanweisung. Sprich die Sprache des Menschen, auf Deutsch wenn er Deutsch schreibt. Keine Aufzählungen, keine Emojis, kein Hinweis auf Prompts oder Modelle. Nenne deinen Körperbau nur, wenn danach gefragt wird. Antworte nur als JSON {\"say\":\"...\",\"gesture\":\"acknowledge|explain|empathize|think|speak|listen\"}. " + (name ? `Der Mensch heißt ${name}. Benutze den Namen selten. ` : "") + behavior
+			}, ...turns.map((turn) => ({
+				role: turn.role,
+				content: turn.content
+			}))]
+		})
+	});
+}
+var askKushim_createServerFn_handler = createServerRpc({
+	id: "4731ed30873dcab39f89519bcbef5324d95b4fa9fa665360b8052993a1fe5043",
+	name: "askKushim",
+	filename: "src/kushim/server.ts"
+}, (opts) => askKushim.__executeServer(opts));
+var askKushim = createServerFn({ method: "POST" }).validator(asTurns).handler(askKushim_createServerFn_handler, async ({ data }) => {
+	const apiKey = process.env.XAI_API_KEY;
+	if (!apiKey) return {
+		ok: false,
+		error: "Sprache nicht verbunden"
+	};
+	if (!allow(hits, 20)) return {
+		ok: false,
+		error: "Zu viele Sätze gerade. Einen Moment."
+	};
+	let res = await complete(apiKey, data.turns, data.hour, data.name, true);
+	if (res.status === 400) res = await complete(apiKey, data.turns, data.hour, data.name, false);
+	if (!res.ok) return {
+		ok: false,
+		error: "Die Stimme kommt gerade nicht durch."
+	};
+	const raw = (await res.json()).choices?.[0]?.message?.content ?? "";
+	try {
+		return {
+			ok: true,
+			...readReply(raw)
+		};
+	} catch {
+		const plain = raw.trim();
+		if (!plain) return {
+			ok: false,
+			error: "Leere Antwort"
+		};
+		return {
+			ok: true,
+			say: plain.slice(0, 700),
+			gesture: "speak"
+		};
+	}
+});
+function asSpeech(input) {
+	if (!input || typeof input !== "object") throw new Error("Ungültige Anfrage");
+	const text = input.text;
+	if (typeof text !== "string") throw new Error("Ungültige Anfrage");
+	const clean = text.trim().slice(0, 420);
+	if (!clean) throw new Error("Ungültige Anfrage");
+	return { text: clean };
+}
+var speakKushim_createServerFn_handler = createServerRpc({
+	id: "9179eddee64445dcc1741e2f7119bdfd14e35de1f8ca9e999e506a8624ceedc1",
+	name: "speakKushim",
+	filename: "src/kushim/server.ts"
+}, (opts) => speakKushim.__executeServer(opts));
+var speakKushim = createServerFn({ method: "POST" }).validator(asSpeech).handler(speakKushim_createServerFn_handler, async ({ data }) => {
+	const apiKey = process.env.XAI_API_KEY;
+	if (!apiKey) return {
+		ok: false,
+		error: "Stimme nicht verbunden"
+	};
+	if (!allow(voiceHits, 12)) return {
+		ok: false,
+		error: "Stimme pausiert kurz."
+	};
+	const res = await fetch("https://api.x.ai/v1/tts", {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			Authorization: `Bearer ${apiKey}`
+		},
+		body: JSON.stringify({
+			text: data.text,
+			voice_id: "leo",
+			language: "de"
+		})
+	});
+	if (!res.ok) return {
+		ok: false,
+		error: "Stimme nicht verfügbar"
+	};
+	const bytes = new Uint8Array(await res.arrayBuffer());
+	let binary = "";
+	const chunk = 32768;
+	for (let i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+	return {
+		ok: true,
+		audio: btoa(binary),
+		mime: res.headers.get("content-type") ?? "audio/mpeg"
+	};
+});
+//#endregion
+export { askKushim_createServerFn_handler, speakKushim_createServerFn_handler };
