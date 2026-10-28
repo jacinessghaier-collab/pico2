@@ -153,6 +153,14 @@ export const CHANGES: Change[] = [
     body: "Dieselbe Prüfung wirft weiter LockBreach. Zusätzlich fallen ein ausgetauschter Shader oder eine andere Geometrie, ein umgehängtes oder ausgeblendetes Teil, eine seitliche oder kopfüber stehende Kamera und ein Raum, der den Void zudeckt. Die Figur und lock.ts sind unverändert.",
     source: "Stundenplan",
   },
+  {
+    id: "reply-form-name",
+    time: "09:10",
+    step: 8,
+    title: "Antwortform, Name und Reparatur",
+    body: "Ohne vorherige Zeile streicht die Reparatur die Entschuldigung und kürzt, ohne Ersatzsatz. Der Name gilt nur als ganzes Wort: Jacin bleibt in Jacinta stehen. Offen bleiben drei: Namen nicht erfragen, Abbruch an der Historie, die nächste Regel in derselben Funktion.",
+    source: "Stundenplan",
+  },
 ];
 
 export const DONE_STEP = 9;

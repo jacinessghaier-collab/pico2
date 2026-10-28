@@ -305,11 +305,12 @@ export type ReplyShape = {
   previous?: string;
 };
 
+/** Der Name gilt nur als ganzes Wort, nicht als Vorsilbe eines längeren. */
 export function mentionNameOnce(say: string, name: string): string {
   const clean = name.trim();
   if (!clean) return say.trim();
   const escaped = clean.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const re = new RegExp(escaped, "gi");
+  const re = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "giu");
   let seen = false;
   return say
     .replace(re, (hit) => {

@@ -18,6 +18,7 @@ import {
   textForLeo,
   trimInterrupted,
 } from "./dialogue.ts";
+import { STAGES } from "./stages.ts";
 
 function wordsOf(sentence: string): string[] {
   return sentence
@@ -34,6 +35,21 @@ describe("name once", () => {
 
   it("does not invent a name", () => {
     assert.equal(mentionNameOnce("Ich bin da.", ""), "Ich bin da.");
+  });
+
+  it("matches the name as a whole word and still drops a repeat", () => {
+    assert.equal(mentionNameOnce("Hallo Jacinta.", "Jacin"), "Hallo Jacinta.");
+    assert.equal(mentionNameOnce("Hallo Jacin2.", "Jacin"), "Hallo Jacin2.");
+    assert.equal(mentionNameOnce("Hallo Jacin und Jacinta.", "Jacin"), "Hallo Jacin und Jacinta.");
+    assert.equal(
+      mentionNameOnce("Jacinta kennt Jacin und Jacin.", "Jacin"),
+      "Jacinta kennt Jacin und.",
+    );
+    assert.equal(
+      mentionNameOnce("Hallo JACIN, danke jacinta und Jacin.", "Jacin"),
+      "Hallo JACIN, danke jacinta und.",
+    );
+    assert.equal(mentionNameOnce("Jacin sagt Jacin bleibt.", "Jacin"), "Jacin sagt bleibt.");
   });
 });
 
@@ -217,6 +233,14 @@ describe("shapeReply", () => {
         "Ich würde dir das lieber mit meiner verbundenen Stimme beantworten. Bis dahin sag mir, was du davon selbst schon glaubst.",
         { name: "Jacin", userText: "Wer bist du?", previous: "" },
       ],
+      [
+        "Tut mir leid, Jacin Jacin. Der Kern sitzt in der Brust und leuchtet noch sehr ruhig hier.",
+        { name: "Jacin", userText: "wie bitte", previous: "" },
+      ],
+      [
+        "Jacinta bleibt hier. Jacin Jacin hört den Satz.",
+        { name: "Jacin", userText: "Ich bin müde.", previous: "" },
+      ],
     ];
     for (const [say, opts] of samples) {
       const once = shapeReply(say, opts);
@@ -260,5 +284,53 @@ describe("shapeReply", () => {
       assert.equal(stages.includes(phrase), false, phrase);
     }
     assert.equal(server.includes("Frage nicht nach dem Namen."), true);
+  });
+
+  it("strips the apology and shortens when the previous line is empty", () => {
+    const opts = { name: "Jacin", userText: "wie bitte", previous: "" };
+    const out = shapeReply(
+      "Tut mir leid, Jacin Jacin. Der Kern sitzt in der Brust und leuchtet noch sehr ruhig hier.",
+      opts,
+    );
+    assert.equal(out, "Jacin. Der Kern sitzt in der Brust und leuchtet noch sehr ruhig hier.");
+    assert.equal(/tut mir leid|entschuldigung|sorry|verzeih/i.test(out), false);
+    assert.equal(out.includes("Sag den Satz noch einmal"), false);
+    assert.equal(shapeReply(out, opts), out);
+    assert.equal(
+      shapeReply("Entschuldigung. Der Kern sitzt in der Brust und leuchtet noch sehr ruhig hier.", {
+        name: "",
+        userText: "nicht verstanden",
+      }),
+      "Der Kern sitzt. In der Brust und leuchtet noch sehr ruhig hier.",
+    );
+    assert.equal(
+      shapeReply("Es tut mir leid.", { name: "Jacin", userText: "was?", previous: "  " }),
+      "",
+    );
+    assert.equal(
+      shapeReply("Ganz anders.", {
+        name: "",
+        userText: "wie bitte",
+        previous: "Es tut mir leid.",
+      }),
+      repairPhrase("Es tut mir leid."),
+    );
+
+    const repairStage = STAGES.find((stage) => stage.hour === 6);
+    assert.equal(repairStage?.label, "Reparatur");
+    assert.equal(repairStage?.prompt, "");
+
+    const fallback = readFileSync(join(srcRoot, "kushim/fallback.ts"), "utf8");
+    assert.equal(fallback.includes("Sag den Satz noch einmal"), false);
+    const repairTail = fallback.slice(fallback.indexOf("if (isRepairRequest(user))"));
+    assert.match(repairTail, /if \(isRepairRequest\(user\)\) gesture = "acknowledge";/);
+    assert.equal(/say\s*=/.test(repairTail), false);
+  });
+
+  it("keeps Jacinta whole and drops only a repeated Jacin", () => {
+    const opts = { name: "Jacin", userText: "Ich bin müde.", previous: "" };
+    const out = shapeReply("Jacinta bleibt hier. Jacin Jacin hört den Satz.", opts);
+    assert.equal(out, "Jacinta bleibt hier. Jacin hört den Satz.");
+    assert.equal(shapeReply(out, opts), out);
   });
 });
