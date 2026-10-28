@@ -42,36 +42,41 @@ export const LOCK_CANON = {
     sprite: 0.04,
   },
   aura: {
-    count: 112,
-    opacity: 0.14,
-    size: 0.2,
+    opacity: 0.55,
+    tight: 980,
+    width: 1.3,
+    height: 2.3,
+    y: 0.96,
+    z: 0.2,
   },
   ground: {
-    opacity: 0.2,
+    opacity: 0.09,
     y: 0.012,
-    z: 0.05,
-    radius: 0.34,
+    z: 0.06,
+    radius: 0.24,
+    foot: 0.11,
+    tight: 90,
   },
   signalNerveCore: "#FF8A2A",
   signalCore: "#FFB15A",
   spriteInner: "#FFFFFF",
   proportions: {
-    hipY: 0.96,
-    chestY: 1.22,
-    shoulderX: 0.2,
+    hipY: 1,
+    chestY: 1.28,
+    shoulderX: 0.21,
     shoulderLocalY: 0.28,
-    upperArm: 0.4,
-    foreArm: 0.31,
-    thigh: 0.46,
-    shin: 0.4,
+    upperArm: 0.42,
+    foreArm: 0.33,
+    thigh: 0.5,
+    shin: 0.46,
     headRadius: 0.105,
-    headLocalY: 0.44,
+    headLocalY: 0.48,
   },
   hipX: 0.11,
   torsoScale: [1.05, 1, 0.72],
   skullScale: [1, 1.16, 1.02],
   glassBoost: 1,
-  brightBoost: 1.8,
+  brightBoost: 0,
   coreBoost: 2.4,
   nerveSpeed: 0.34,
   signalSpeed: 0.2,
@@ -698,7 +703,7 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
     }
   };
   expectCount("glass", 1);
-  expectCount("glass-bright", 1);
+  expectCount("glass-bright", 0);
   expectCount("nerve", 1);
   expectCount("signal", 1);
   expectCount("core", 1);
@@ -713,25 +718,6 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
   mustHex(colorSlot(rig.glass, "uCore"), LOCK_CANON.kern, "Glasfarbe Kern", "Glass core color");
   expectGlassLook(rig.glass, "Glas", "Glass", THREE.DoubleSide);
   expectShell(rig.glass, "Glas", "Glass");
-
-  const brightMats: THREE.ShaderMaterial[] = [];
-  rig.root.traverse((obj) => {
-    for (const material of materialsOf(obj)) {
-      if (roles.get(material) === "glass-bright") brightMats.push(material as THREE.ShaderMaterial);
-    }
-  });
-  const bright = brightMats[0];
-  if (!bright) breach("Helles Glas fehlt.", "Bright glass is missing.");
-  mustClose(
-    numberSlot(bright, "uBoost", true),
-    LOCK_CANON.brightBoost,
-    "Glanz-Boost",
-    "Bright boost",
-  );
-  mustHex(colorSlot(bright, "uColor"), LOCK_CANON.strom, "Glanzfarbe Strom", "Bright strom color");
-  mustHex(colorSlot(bright, "uCore"), LOCK_CANON.kern, "Glanzfarbe Kern", "Bright core color");
-  expectGlassLook(bright, "Glanz", "Bright glass", THREE.DoubleSide);
-  expectShell(bright, "Glanz", "Bright glass");
 
   mustHex(
     colorSlot(rig.nerve, "uColor"),
@@ -873,30 +859,47 @@ function auditShellExtras(rig: LockedRig) {
   if (!aura || aura.parent !== rig.root) {
     breach("Die Aura hängt nicht am Körper.", "The aura is not on the body.");
   }
-  const auraMat = (aura as THREE.Points).material;
+  if ((aura as THREE.Points).isPoints) {
+    breach("Die Aura ist noch ein Partikelring.", "The aura is still a particle ring.");
+  }
+  const auraMesh = aura as THREE.Mesh<THREE.PlaneGeometry>;
+  if (!auraMesh.isMesh) {
+    breach("Die Aura ist kein durchgehender Schleier.", "The aura is not a continuous veil.");
+  }
+  const auraMat = auraMesh.material;
   if (!auraMat || Array.isArray(auraMat) || roles.get(auraMat) !== "aura") {
     breach("Aura-Material fehlt.", "Aura material is missing.");
   }
-  const points = auraMat as THREE.PointsMaterial;
-  mustHex(points.color, LOCK_CANON.strom, "Aurafarbe", "Aura color");
-  mustClose(points.size, LOCK_CANON.aura.size, "Auragröße", "Aura size");
-  mustClose(points.opacity, LOCK_CANON.aura.opacity, "Auradeckkraft", "Aura opacity");
-  if (
-    !points.transparent ||
-    points.depthWrite ||
-    points.blending !== THREE.AdditiveBlending ||
-    points.premultipliedAlpha ||
-    !points.sizeAttenuation
-  ) {
-    breach("Die Aura hat ihren weichen Rand verloren.", "The aura lost its soft edge.");
+  const auraShader = auraMat as THREE.ShaderMaterial;
+  mustHex(colorSlot(auraShader, "uColor"), LOCK_CANON.strom, "Aurafarbe", "Aura color");
+  mustClose(
+    numberSlot(auraShader, "uOpacity", true),
+    LOCK_CANON.aura.opacity,
+    "Auradeckkraft",
+    "Aura opacity",
+  );
+  mustClose(
+    numberSlot(auraShader, "uTight", true),
+    LOCK_CANON.aura.tight,
+    "Auraenge",
+    "Aura tightness",
+  );
+  mustClose(
+    numberSlot(auraShader, "uOriginY", true),
+    LOCK_CANON.aura.y,
+    "Aura-Ursprung",
+    "Aura origin",
+  );
+  expectGlassLook(auraShader, "Aura", "Aura", THREE.DoubleSide);
+  mustClose(aura.position.x, 0, "Aura seitlich", "Aura lateral");
+  mustClose(aura.position.y, LOCK_CANON.aura.y, "Aurahöhe", "Aura height");
+  mustClose(aura.position.z, LOCK_CANON.aura.z, "Auratiefe", "Aura depth");
+  const auraSize = auraMesh.geometry?.parameters;
+  if (!auraSize || !Number.isFinite(auraSize.width) || !Number.isFinite(auraSize.height)) {
+    breach("Auramasse fehlt.", "Aura size is missing.");
   }
-  const attr = (aura as THREE.Points).geometry?.getAttribute("position");
-  if (!attr || attr.count !== LOCK_CANON.aura.count) {
-    breach(
-      "Die Aura hat nicht mehr die gesperrte Punktzahl.",
-      "The aura no longer has its locked point count.",
-    );
-  }
+  mustClose(auraSize.width, LOCK_CANON.aura.width, "Aurabreite", "Aura width");
+  mustClose(auraSize.height, LOCK_CANON.aura.height, "Auralänge", "Aura length");
 
   const ground = objectByKey(rig.root, "ground");
   if (!ground || ground.parent !== rig.root) {
@@ -916,6 +919,24 @@ function auditShellExtras(rig: LockedRig) {
     LOCK_CANON.ground.opacity,
     "Bodenlicht-Deckkraft",
     "Ground-light opacity",
+  );
+  mustClose(
+    numberSlot(shader, "uRadius", true),
+    LOCK_CANON.ground.radius,
+    "Bodenlicht-Radiusuniform",
+    "Ground-light radius uniform",
+  );
+  mustClose(
+    numberSlot(shader, "uFoot", true),
+    LOCK_CANON.ground.foot,
+    "Bodenlicht-Fußabstand",
+    "Ground-light foot spacing",
+  );
+  mustClose(
+    numberSlot(shader, "uTight", true),
+    LOCK_CANON.ground.tight,
+    "Bodenlicht-Enge",
+    "Ground-light tightness",
   );
   expectGlassLook(shader, "Bodenlicht", "Ground light", THREE.DoubleSide);
   const radius = (ground as THREE.Mesh<THREE.CircleGeometry>).geometry?.parameters?.radius;
