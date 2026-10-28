@@ -154,6 +154,14 @@ export const CHANGES: Change[] = [
     source: "Stundenplan",
   },
   {
+    id: "stability-read",
+    time: "09:00",
+    step: null,
+    title: "Stabilitätscheck",
+    body: "Dieselbe Prüfung aus lock-check.ts, auf dem Takt von zwei Sekunden, über die Trainingsstunden. Sie bleibt grün. Kein zweiter Check, kein Post-Pass, kein visueller Eingriff. Die Figur und lock.ts sind unverändert. FIRST_PAUSE_MS bleibt 320. Satzmelodie bleibt ausgesetzt.",
+    source: "Stundenplan",
+  },
+  {
     id: "reply-form-name",
     time: "09:10",
     step: 8,
@@ -175,6 +183,6 @@ export const DONE_STEP = 9;
 export const NEXT_STEP = 10;
 export const NEXT_RUN_LABEL = "10:00";
 
-/** Hourly pipeline. Step 9 ends the last viseme on the text clock. Melody stays deferred. */
+/** Hourly pipeline. Step 9 read the appearance lock. The last viseme ends on the text clock. Melody stays deferred. */
 export const HOURLY_DONE = 9;
 export const HOURLY_NEXT = 10;

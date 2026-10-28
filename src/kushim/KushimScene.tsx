@@ -6,7 +6,12 @@ import { createKushim } from "@/kushim/anatomy";
 import { noteLiveFrame, resetLiveFrame } from "@/kushim/frame-time";
 import { setGaze } from "@/kushim/lipsync";
 import { LOCK } from "@/kushim/lock";
-import { assertClearLock, assertFrontalCamera, assertRigLock } from "@/kushim/lock-check";
+import {
+  LOCK_READ_SEC,
+  assertClearLock,
+  assertFrontalCamera,
+  assertRigLock,
+} from "@/kushim/lock-check";
 import { tickKushim, type Pose } from "@/kushim/motion";
 
 function Framing() {
@@ -61,7 +66,7 @@ function Avatar({
     if (pose) tickKushim(rig, pose, dt, elapsed.current);
     if (reported.current) return;
     lockAcc.current += dt;
-    if (lockSeen.current && lockAcc.current < 2) return;
+    if (lockSeen.current && lockAcc.current < LOCK_READ_SEC) return;
     lockSeen.current = true;
     lockAcc.current = 0;
     try {

@@ -5,6 +5,7 @@ import { createKushim } from "@/kushim/anatomy";
 import { GESTURES, LOCK, type Gesture } from "@/kushim/lock";
 import {
   LOCK_CANON,
+  LOCK_READ_SEC,
   LockBreach,
   assertClearLock,
   assertFrontalCamera,
@@ -448,5 +449,80 @@ describe("camera and void", () => {
       loud,
     );
     assert.doesNotThrow(() => assertClearLock(gl, scene));
+  });
+});
+
+describe("stability read", () => {
+  it("holds the sealed figure across training hours on the two-second cadence", () => {
+    assert.equal(LOCK_READ_SEC, 2);
+    const dt = 0.05;
+    const framesPerRead = 40;
+    assert.ok(Math.abs(framesPerRead * dt - LOCK_READ_SEC) < 1e-9);
+
+    const rig = createKushim();
+    const scene = new THREE.Scene();
+    const cam = frame(1280 / 800);
+    const color = new THREE.Color(LOCK.void);
+    const gl = {
+      toneMapping: THREE.NoToneMapping,
+      outputColorSpace: THREE.SRGBColorSpace,
+      getClearColor: (target: THREE.Color) => target.copy(color),
+      getClearAlpha: () => 1,
+    };
+    scene.add(rig.root);
+    let sealedNodes = 0;
+    rig.root.traverse(() => {
+      sealedNodes += 1;
+    });
+    const gestures = GESTURES as readonly Gesture[];
+    let elapsed = 0;
+
+    const read = (hour: number, frames: number, reducedMotion: boolean) => {
+      for (let n = 1; n <= frames; n++) {
+        elapsed += dt;
+        const gesture = gestures[n % gestures.length] ?? "idle";
+        tickKushim(
+          rig,
+          pose({
+            gesture,
+            speaking: !reducedMotion && (gesture === "speak" || gesture === "explain"),
+            hour,
+            reducedMotion,
+            shoulderTopic: hour >= 5 && !reducedMotion,
+            attention: hour >= 4 ? 1 : 0,
+            typing: hour >= 1 && !reducedMotion,
+          }),
+          dt,
+          elapsed,
+        );
+        if (n % framesPerRead !== 0) continue;
+        assertRigLock(rig, "live", scene);
+        assertFrontalCamera(cam);
+        assertClearLock(gl, scene);
+      }
+    };
+
+    try {
+      for (let hour = 0; hour <= 8; hour++) read(hour, framesPerRead, false);
+      read(8, framesPerRead * 10, false);
+      read(8, framesPerRead, true);
+      let after = 0;
+      rig.root.traverse(() => {
+        after += 1;
+      });
+      assert.equal(after, sealedNodes);
+      assert.equal(scene.children.length, 1);
+      assert.equal(scene.children[0], rig.root);
+      assert.equal(LOCK.void, "#02060A");
+      assert.equal(LOCK.strom, "#3AD7FF");
+      assert.equal(LOCK.kern, "#E7FBFF");
+      assert.equal(LOCK.signal, "#FF3B4E");
+      assert.equal(LOCK.proportions.headRadius, 0.105);
+      assert.equal(rig.shoulderR.position.x, -LOCK.proportions.shoulderX);
+      assert.ok(Object.isFrozen(LOCK));
+      assert.ok(Object.isFrozen(LOCK.proportions));
+    } finally {
+      rig.dispose();
+    }
   });
 });

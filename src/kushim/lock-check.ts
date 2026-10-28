@@ -6,6 +6,7 @@
  * Silhouette, palette, the single red site, void, and the straight-on camera stay put.
  * The re-read also rejects a swapped shader or geometry, a reparented or hidden
  * part, a yawed or upside-down camera, and a scene that covers the void.
+ * The live scene re-reads on LOCK_READ_SEC. There is no second checker and no post-pass.
  */
 import * as THREE from "three";
 import { LOCK } from "@/kushim/lock";
@@ -899,6 +900,9 @@ function auditBaseline(rig: LockedRig) {
     }
   }
 }
+
+/** Seconds between live re-reads. The scene and the stability hour share this gate. */
+export const LOCK_READ_SEC = 2;
 
 export function assertRigLock(
   rig: LockedRig,
