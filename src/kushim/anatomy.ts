@@ -344,16 +344,6 @@ function hermite(edge0: number, edge1: number, x: number) {
   return t * t * (3 - 2 * t);
 }
 
-function taperRadii(r0: number, r1: number, n: number) {
-  const radii: number[] = [];
-  for (let i = 0; i < n; i++) {
-    const t = n === 1 ? 0 : i / (n - 1);
-    const s = t * t * (3 - 2 * t);
-    radii.push(r0 + (r1 - r0) * s);
-  }
-  return radii;
-}
-
 function radiusAt(radii: readonly number[], t: number) {
   if (radii.length <= 1) return radii[0] ?? 0.02;
   const x = Math.min(1, Math.max(0, t)) * (radii.length - 1);
@@ -384,7 +374,8 @@ function shellRadius(localY: number) {
 /** How far the upper-arm silhouette sits outside the torso. Small at the axilla. */
 function armProtrusion(along: number) {
   const t = Math.min(1, Math.max(0, along));
-  return 0.01 + t * t * 0.085;
+  const cap = Math.sin(Math.min(1, t / 0.28) * Math.PI);
+  return 0.008 + cap * cap * 0.055 + t * t * 0.02;
 }
 
 /** Chest-local lateral center of the hugged upper arm. */
@@ -393,6 +384,22 @@ function hugCenter(chestLocalY: number, radius: number) {
     (LOCK.proportions.shoulderLocalY - chestLocalY) / LOCK.proportions.upperArm;
   const half = shellRadius(chestLocalY) * SHELL_SX;
   return half + armProtrusion(along) - radius;
+}
+
+/**
+ * Upper-arm axis in chest space. The root stays buried in the axilla.
+ * Below the deltoid the bone hangs at the shoulder so the biceps keeps its girth.
+ */
+function upperCenter(t: number) {
+  const u = Math.min(1, Math.max(0, t));
+  const r = radiusAt(UPPER_RADII, u);
+  const tubeY = BLEND.shoulder * (1 - u) - LOCK.proportions.upperArm * u;
+  const y = LOCK.proportions.shoulderLocalY + tubeY;
+  const hugged = hugCenter(y, r);
+  // Hang under the deltoid. A lateral shove at the root reads as a wing.
+  const hang = LOCK.proportions.shoulderX + r * 0.12;
+  const hold = 1 - hermite(0.2, 0.5, u);
+  return { r, y, center: hugged * hold + hang * (1 - hold) };
 }
 
 /** 0 inside the torso glass, 1 once the vertex clears the skin. */
@@ -450,7 +457,7 @@ function organicTube(
       r *= 1 + sleeve * tip;
     }
     let bias = -side * inset * Math.pow(1 - t, tuckPower);
-    if (opts?.hug) bias = side * (hugCenter(shoulderY + y, r) - shoulderX);
+    if (opts?.hug) bias = side * (upperCenter(t).center - shoulderX);
     let cover = 1;
     if (opts?.join === "child" && prox > 0) cover = Math.min(cover, hermite(0, -prox, y));
     else if (prox > 0) cover = Math.min(cover, hermite(prox, 0, y));
@@ -520,27 +527,29 @@ function jointBridge(radius: number, span: number) {
   return geo;
 }
 
-/** Drop the torso's side rim where the arm already owns the silhouette. */
+/** Drop the torso rim only where a limb already owns that silhouette. */
 function fadeTorsoSides(geo: THREE.BufferGeometry) {
   const pos = geo.getAttribute("position");
   const fade = new Float32Array(pos.count);
   const P = LOCK.proportions;
   const yTop = P.shoulderLocalY;
-  const yBot = yTop - P.upperArm;
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i) * SHELL_SX;
     const y = pos.getY(i);
     const z = pos.getZ(i) * 0.72;
     let cover = 1;
-    if (y < yTop + 0.1 && y > yBot + 0.02) {
-      const along = Math.min(1, Math.max(0, (yTop - y) / P.upperArm));
-      const r = LIMB.upper.r0 + (LIMB.upper.r1 - LIMB.upper.r0) * along;
-      const ax = hugCenter(y, r);
-      for (const side of [1, -1] as const) {
-        const ex = (x - side * ax) / (r * 1.2);
-        const ez = z / (r * 1.05);
-        const inside = ex * ex + ez * ez;
-        if (inside < 1) cover = Math.min(cover, hermite(0.15, 0.9, inside));
+    // Axilla only. Fading the chest below it ate the pec rim and inverted the taper.
+    if (y < yTop + 0.06 && y > yTop - 0.1) {
+      const tubeY = y - yTop;
+      const t = (BLEND.shoulder - tubeY) / (BLEND.shoulder + P.upperArm);
+      if (t > -0.02 && t < 0.22) {
+        const arm = upperCenter(Math.min(1, Math.max(0, t)));
+        for (const side of [1, -1] as const) {
+          const ex = (x - side * arm.center) / (arm.r * 1.05);
+          const ez = z / (arm.r * 0.95);
+          const inside = ex * ex + ez * ez;
+          if (inside < 1) cover = Math.min(cover, hermite(0.35, 0.95, inside));
+        }
       }
     }
     fade[i] = cover;
@@ -559,8 +568,8 @@ function shoulderSlope(side: 1 | -1) {
   const fade: number[] = [];
   const idx: number[] = [];
   const p0 = new THREE.Vector3(side * 0.07, 0.44, 0);
-  const p1 = new THREE.Vector3(side * 0.18, 0.34, 0.01);
-  const p2 = new THREE.Vector3(side * 0.15, 0.16, 0.006);
+  const p1 = new THREE.Vector3(side * 0.2, 0.33, 0.01);
+  const p2 = new THREE.Vector3(side * 0.17, 0.18, 0.006);
   const c = new THREE.Vector3();
   const tang = new THREE.Vector3();
   const sideV = new THREE.Vector3();
@@ -583,7 +592,7 @@ function shoulderSlope(side: 1 | -1) {
     if (sideV.lengthSq() < 1e-8) sideV.set(1, 0, 0);
     sideV.normalize();
     bin.crossVectors(sideV, tang).normalize();
-    const rad = 0.014 + Math.sin(Math.PI * t) * 0.016;
+    const rad = 0.016 + Math.sin(Math.PI * t) * 0.02;
     const end = hermite(0, 0.16, t) * hermite(1, 0.7, t);
     for (let j = 0; j <= seg; j++) {
       const a = (j / seg) * Math.PI * 2;
@@ -697,32 +706,43 @@ function glowSprite(inner: string, outer: string, spikes: number) {
 const SHELL_SX = 1.05;
 const SKULL_SY = 1.16;
 const HIP_X = 0.11;
-/** Same lathe the glass torso uses. The aura zero-contour reads this profile. */
+/**
+ * Athletic torso, same neck span as before. Radii are the lathe, before SHELL_SX.
+ * Waist stays narrower than chest and iliac. Neck top is unchanged so the skull sits.
+ */
 const SHELL_LATHE: Array<[number, number]> = [
-  [0.06, -0.34],
-  [0.108, -0.26],
-  [0.14, -0.14],
-  [0.11, -0.02],
-  [0.098, 0.06],
-  [0.112, 0.11],
-  [0.142, 0.16],
-  [0.172, 0.21],
-  [0.196, 0.27],
-  [0.172, 0.33],
-  [0.118, 0.38],
-  [0.09, 0.42],
+  [0.12, -0.34],
+  [0.188, -0.29],
+  [0.202, -0.22],
+  [0.19, -0.15],
+  [0.156, -0.06],
+  [0.134, 0.02],
+  [0.144, 0.08],
+  [0.178, 0.14],
+  [0.21, 0.19],
+  [0.228, 0.24],
+  [0.246, 0.29],
+  [0.176, 0.35],
+  [0.118, 0.39],
+  [0.09, 0.43],
   [0.05, 0.5],
 ];
 /** Crossfade length shared by a parent distal end and its child proximal end. */
-const BLEND = { elbow: 0.14, knee: 0.14, shoulder: 0.02, hip: 0.02 };
+const BLEND = { elbow: 0.14, knee: 0.14, shoulder: 0.02, hip: 0.05 };
+/** Deltoid into biceps, then the elbow radius. Root is buried, so this is not a ball. */
+const UPPER_RADII = [0.046, 0.064, 0.086, 0.094, 0.086, 0.068, 0.048, 0.036, 0.034];
+/** Forearm belly sits past the elbow blend. Ends match the wrist. */
+const FORE_RADII = [0.034, 0.036, 0.044, 0.046, 0.04, 0.03, 0.022];
+/** Quad belly, then the knee radius so the bridge stays the same tube. */
+const THIGH_RADII = [0.096, 0.104, 0.106, 0.088, 0.066, 0.048, 0.042, 0.042, 0.042];
+/** Knee radius, calf belly, ankle. The swell starts below the knee blend. */
+const SHIN_RADII = [0.042, 0.044, 0.052, 0.068, 0.088, 0.08, 0.054, 0.034, 0.026];
 const LIMB = {
-  upper: { r0: 0.056, r1: 0.032, inset: 0.024 },
-  fore: { r0: 0.032, r1: 0.02, inset: 0 },
-  thigh: { r0: 0.072, r1: 0.038, inset: 0.008 },
-  shin: { r0: 0.038, r1: 0.024, inset: 0 },
+  upper: { r0: UPPER_RADII[0], r1: UPPER_RADII[UPPER_RADII.length - 1], inset: 0.06 },
+  fore: { r0: FORE_RADII[0], r1: FORE_RADII[FORE_RADII.length - 1], inset: 0 },
+  thigh: { r0: THIGH_RADII[0], r1: THIGH_RADII[THIGH_RADII.length - 1], inset: 0.004 },
+  shin: { r0: SHIN_RADII[0], r1: SHIN_RADII[SHIN_RADII.length - 1], inset: 0 },
 } as const;
-/** Deltoid swell along the upper arm. Buried in the torso, so it is a slope, not a ball. */
-const UPPER_RADII = [0.044, 0.056, 0.06, 0.054, 0.048, 0.042, 0.038, 0.034, 0.032];
 
 const auraVert = /* glsl */ `
 uniform float uOriginY;
@@ -758,28 +778,60 @@ function buildAuraFrag() {
   const kneeY = P.hipY - P.thigh;
   const ankleY = kneeY - P.shin;
   const headY = P.chestY + P.headLocalY;
-  const L = LIMB;
   const limb = (x: number, yTop: number, yBot: number, r0: number, r1: number, inset: number) =>
     `sdLimb(p, ${g4(x)}, ${g4(yTop)}, ${g4(yBot)}, ${g4(r0)}, ${g4(r1)}, ${g4(inset)})`;
-  const hugGlsl = (sign: 1 | -1) => {
-    const n = 6;
-    const pts: Array<{ x: number; y: number; r: number }> = [];
-    for (let i = 0; i <= n; i++) {
-      const along = i / n;
-      const y = shoulderY - along * P.upperArm;
-      const r = L.upper.r0 + (L.upper.r1 - L.upper.r0) * along;
-      pts.push({ x: sign * hugCenter(y - chestY, r), y, r });
-    }
-    return pts
+  const link = (pts: Array<{ x: number; y: number; r: number }>) =>
+    pts
       .slice(1)
       .map((p, i) => {
-        const a = pts[i];
+        const a = pts[i] ?? p;
         return `d = min(d, sdTaper(p, vec2(${g4(a.x)}, ${g4(a.y)}), vec2(${g4(p.x)}, ${g4(p.y)}), ${g4(a.r)}, ${g4(p.r)}));`;
       })
       .join("\n    ");
+  const upperPts = (sign: 1 | -1) =>
+    UPPER_RADII.map((_, i) => {
+      const s = upperCenter(i / (UPPER_RADII.length - 1));
+      return { x: sign * s.center, y: chestY + s.y, r: s.r };
+    });
+  const bonePts = (
+    radii: readonly number[],
+    sign: 1 | -1,
+    x: number,
+    yJoint: number,
+    yEnd: number,
+    inset: number,
+    prox: number,
+    length: number,
+  ) => {
+    const t0 = prox / (prox + length);
+    return radii.map((_, i) => {
+      const u = radii.length === 1 ? 0 : i / (radii.length - 1);
+      const t = t0 + (1 - t0) * u;
+      const lean = x - inset * (1 - t) * (1 - t);
+      return { x: sign * lean, y: yJoint + (yEnd - yJoint) * u, r: radiusAt(radii, t) };
+    });
   };
-  const hugPos = hugGlsl(1);
-  const hugNeg = hugGlsl(-1);
+  const pair = (pos: string, neg: string) => `
+  float d = 8.0;
+  if (s > 0.0) {
+    ${pos}
+  } else {
+    ${neg}
+  }
+  return d;`;
+  const hugPair = pair(link(upperPts(1)), link(upperPts(-1)));
+  const forePair = pair(
+    link(bonePts(FORE_RADII, 1, P.shoulderX, elbowY, wristY, 0, BLEND.elbow, P.foreArm)),
+    link(bonePts(FORE_RADII, -1, P.shoulderX, elbowY, wristY, 0, BLEND.elbow, P.foreArm)),
+  );
+  const thighPair = pair(
+    link(bonePts(THIGH_RADII, 1, HIP_X, P.hipY, kneeY, LIMB.thigh.inset, BLEND.hip, P.thigh)),
+    link(bonePts(THIGH_RADII, -1, HIP_X, P.hipY, kneeY, LIMB.thigh.inset, BLEND.hip, P.thigh)),
+  );
+  const shinPair = pair(
+    link(bonePts(SHIN_RADII, 1, HIP_X, kneeY, ankleY, 0, BLEND.knee, P.shin)),
+    link(bonePts(SHIN_RADII, -1, HIP_X, kneeY, ankleY, 0, BLEND.knee, P.shin)),
+  );
   return /* glsl */ `
 uniform vec3 uColor;
 uniform float uOpacity;
@@ -826,36 +878,31 @@ float sdLimb(vec2 p, float x, float yTop, float yBot, float r0, float r1, float 
 }
 
 float sdDeltoid(vec2 p, float s) {
-  float neck = sdTaper(p, vec2(s * 0.08, 1.72), vec2(s * 0.19, 1.60), 0.016, 0.028);
-  float cap = sdTaper(p, vec2(s * 0.19, 1.60), vec2(s * 0.15, 1.42), 0.028, 0.016);
-  return smin(neck, cap, 0.026);
+  float neck = sdTaper(p, vec2(s * 0.08, 1.72), vec2(s * 0.21, 1.61), 0.018, 0.034);
+  float cap = sdTaper(p, vec2(s * 0.21, 1.61), vec2(s * 0.17, 1.46), 0.034, 0.02);
+  return smin(neck, cap, 0.03);
 }
 
-float sdHug(vec2 p, float s) {
-  float d = 8.0;
-  if (s > 0.0) {
-    ${hugPos}
-  } else {
-    ${hugNeg}
-  }
-  return d;
-}
+float sdHug(vec2 p, float s) {${hugPair}}
+float sdFore(vec2 p, float s) {${forePair}}
+float sdThigh(vec2 p, float s) {${thighPair}}
+float sdShin(vec2 p, float s) {${shinPair}}
 
 float sdBody(vec2 p) {
   float d = sdTorso(p);
   d = smin(d, sdEllipse(p, vec2(0.0, ${g4(headY)}), vec2(${g4(P.headRadius)}, ${g4(P.headRadius * SKULL_SY)})), 0.036);
   d = smin(d, sdDeltoid(p, 1.0), 0.032);
   d = smin(d, sdDeltoid(p, -1.0), 0.032);
-  d = smin(d, sdHug(p, 1.0), 0.028);
-  d = smin(d, sdHug(p, -1.0), 0.028);
-  d = smin(d, ${limb(P.shoulderX, elbowY, wristY, L.fore.r0, L.fore.r1, 0)}, 0.024);
-  d = smin(d, ${limb(-P.shoulderX, elbowY, wristY, L.fore.r0, L.fore.r1, 0)}, 0.024);
-  d = smin(d, ${limb(P.shoulderX, wristY, wristY - 0.06, 0.02, 0.016, 0)}, 0.018);
-  d = smin(d, ${limb(-P.shoulderX, wristY, wristY - 0.06, 0.02, 0.016, 0)}, 0.018);
-  d = smin(d, ${limb(HIP_X, P.hipY, kneeY, L.thigh.r0, L.thigh.r1, L.thigh.inset)}, 0.034);
-  d = smin(d, ${limb(-HIP_X, P.hipY, kneeY, L.thigh.r0, L.thigh.r1, L.thigh.inset)}, 0.034);
-  d = smin(d, ${limb(HIP_X, kneeY, ankleY, L.shin.r0, L.shin.r1, 0)}, 0.028);
-  d = smin(d, ${limb(-HIP_X, kneeY, ankleY, L.shin.r0, L.shin.r1, 0)}, 0.028);
+  d = smin(d, sdHug(p, 1.0), 0.04);
+  d = smin(d, sdHug(p, -1.0), 0.04);
+  d = smin(d, sdFore(p, 1.0), 0.028);
+  d = smin(d, sdFore(p, -1.0), 0.028);
+  d = smin(d, ${limb(P.shoulderX, wristY, wristY - 0.06, 0.022, 0.016, 0)}, 0.018);
+  d = smin(d, ${limb(-P.shoulderX, wristY, wristY - 0.06, 0.022, 0.016, 0)}, 0.018);
+  d = smin(d, sdThigh(p, 1.0), 0.046);
+  d = smin(d, sdThigh(p, -1.0), 0.046);
+  d = smin(d, sdShin(p, 1.0), 0.032);
+  d = smin(d, sdShin(p, -1.0), 0.032);
   d = smin(d, ${limb(HIP_X, ankleY + 0.016, ankleY - 0.02, 0.038, 0.03, 0)}, 0.03);
   d = smin(d, ${limb(-HIP_X, ankleY + 0.016, ankleY - 0.02, 0.038, 0.03, 0)}, 0.03);
   return d;
@@ -1663,7 +1710,7 @@ export function createKushim(): Rig {
     solid(elbow, jointBridge(LIMB.fore.r0, BLEND.elbow), glass);
     const foreMesh = solid(
       elbow,
-      organicTube(taperRadii(LIMB.fore.r0, LIMB.fore.r1, 8), P.foreArm, side, 0, BLEND.elbow, 0, {
+      organicTube(FORE_RADII, P.foreArm, side, 0, BLEND.elbow, 0, {
         join: "child",
       }),
       glass,
@@ -1761,7 +1808,7 @@ export function createKushim(): Rig {
     const thighMesh = solid(
       hip,
       organicTube(
-        taperRadii(LIMB.thigh.r0, LIMB.thigh.r1, 8),
+        THIGH_RADII,
         P.thigh,
         side,
         LIMB.thigh.inset,
@@ -1781,7 +1828,7 @@ export function createKushim(): Rig {
     solid(knee, jointBridge(LIMB.shin.r0, BLEND.knee), glass);
     const shinMesh = solid(
       knee,
-      organicTube(taperRadii(LIMB.shin.r0, LIMB.shin.r1, 8), P.shin, side, 0, BLEND.knee, 0.035, {
+      organicTube(SHIN_RADII, P.shin, side, 0, BLEND.knee, 0.035, {
         join: "child",
       }),
       glass,
