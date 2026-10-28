@@ -3,7 +3,7 @@
  * Legal motion (breath, gestures, filament 0.86–1, shoulder spark, viseme,
  * jaw drop, gaze, blink) is the envelope from tickKushim and lipsync —
  * update those constants in the same change.
- * Silhouette, palette, the single red site, void, and the straight-on camera stay put.
+ * Silhouette, palette, the single green shoulder accent, void, and the straight-on camera stay put.
  * The re-read also rejects a swapped shader or geometry, a reparented or hidden
  * part, a yawed or upside-down camera, and a scene that covers the void.
  */
@@ -27,9 +27,11 @@ export const LOCK_CANON = {
   void: "#02060A",
   strom: "#3AD7FF",
   kern: "#E7FBFF",
-  signal: "#FF3B4E",
-  signalNerveCore: "#FFD0D4",
-  signalCore: "#FFD5D8",
+  ader: "#C8EE3C",
+  aderKern: "#F6FFC8",
+  signal: "#6DFF78",
+  signalKern: "#E4FFE8",
+  signalGlanz: "#F3FFF6",
   spriteInner: "#FFFFFF",
   proportions: {
     hipY: 0.96,
@@ -47,12 +49,13 @@ export const LOCK_CANON = {
   torsoScale: [1.05, 1, 0.72],
   skullScale: [1, 1.16, 1.02],
   glassBoost: 1,
-  brightBoost: 1.8,
-  coreBoost: 2.4,
+  brightBoost: 1.15,
+  coreBoost: 1.2,
+  groundBoost: 1,
   nerveSpeed: 0.34,
   signalSpeed: 0.2,
-  ringSize: 0.028,
-  ringOpacity: 0.8,
+  ringSize: 0.012,
+  ringOpacity: 0.22,
   ringPoints: 96,
   corePos: [-0.01, -0.05, 0.03],
   ringPos: [0, -0.04, 0.02],
@@ -89,7 +92,14 @@ function freezeCanon(value: object) {
 freezeCanon(LOCK_CANON);
 
 export type MaterialRole =
-  "glass" | "glass-bright" | "nerve" | "signal" | "core" | "sprite" | "ring";
+  | "glass"
+  | "glass-bright"
+  | "nerve"
+  | "signal"
+  | "core"
+  | "sprite"
+  | "ring"
+  | "ground";
 
 export type LockedRig = {
   root: THREE.Object3D;
@@ -242,10 +252,19 @@ export function assertLockTable() {
     breach("Die Vergleichstabelle ist nicht eingefroren.", "The comparison table is not frozen.");
   }
   const top = Object.keys(LOCK).sort().join(",");
-  if (top !== "kern,proportions,signal,strom,void") {
+  if (top !== "ader,aderKern,kern,proportions,signal,signalGlanz,signalKern,strom,void") {
     breach("LOCK hat andere Schlüssel.", "LOCK has different keys.");
   }
-  const colors = ["void", "strom", "kern", "signal"] as const;
+  const colors = [
+    "void",
+    "strom",
+    "kern",
+    "ader",
+    "aderKern",
+    "signal",
+    "signalKern",
+    "signalGlanz",
+  ] as const;
   for (const key of colors) {
     if (LOCK[key].toUpperCase() !== LOCK_CANON[key]) {
       breach(
@@ -382,8 +401,8 @@ function auditChain(rig: LockedRig) {
   }
   if (rig.core.parent !== rig.shoulderR || rig.ring.parent !== rig.shoulderR) {
     breach(
-      "Rotes Signal sitzt nicht auf Kushims rechter Schulter.",
-      "Red signal is not on Kushim's right shoulder.",
+      "Grünes Signal sitzt nicht auf Kushims rechter Schulter.",
+      "Green signal is not on Kushim's right shoulder.",
     );
   }
 }
@@ -549,7 +568,7 @@ function auditSkeleton(rig: LockedRig, phase: Phase) {
     const y = finite(array[i * 3 + 1], "Signalring ungültig.", "Signal ring is invalid.");
     const z = finite(array[i * 3 + 2], "Signalring ungültig.", "Signal ring is invalid.");
     if (Math.hypot(x, y, z) > LOCK_CANON.sparkRadius) {
-      breach("Die roten Funken verlassen die Schulter.", "The red sparks leave the shoulder.");
+      breach("Die Funken verlassen die Schulter.", "The sparks leave the shoulder.");
     }
   }
 }
@@ -587,12 +606,12 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
       bump(role, material);
       if ((role === "signal" || role === "core" || role === "ring") && !under(obj, rig.shoulderR)) {
         breach(
-          "Rotes Signal sitzt nicht auf Kushims rechter Schulter.",
-          "Red signal is not on Kushim's right shoulder.",
+          "Grünes Signal sitzt nicht auf Kushims rechter Schulter.",
+          "Green signal is not on Kushim's right shoulder.",
         );
       }
       if ((role === "signal" || role === "core" || role === "ring") && under(obj, rig.shoulderL)) {
-        breach("Die linke Schulter trägt Rot.", "The left shoulder carries red.");
+        breach("Die linke Schulter trägt das Signal.", "The left shoulder carries the signal.");
       }
     }
   });
@@ -613,12 +632,13 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
   expectCount("core", 1);
   expectCount("ring", 1);
   expectCount("sprite", 3);
+  expectCount("ground", 1);
 
   const glassBoost = numberSlot(rig.glass, "uBoost", true);
   mustClose(glassBoost, LOCK_CANON.glassBoost, "Glas-Boost", "Glass boost");
   mustHex(colorSlot(rig.glass, "uColor"), LOCK_CANON.strom, "Glasfarbe Strom", "Glass strom color");
   mustHex(colorSlot(rig.glass, "uCore"), LOCK_CANON.kern, "Glasfarbe Kern", "Glass core color");
-  expectGlassLook(rig.glass, "Glas", "Glass", THREE.DoubleSide);
+  expectGlassLook(rig.glass, "Glas", "Glass", THREE.FrontSide);
 
   const brightMats: THREE.ShaderMaterial[] = [];
   rig.root.traverse((obj) => {
@@ -636,15 +656,20 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
   );
   mustHex(colorSlot(bright, "uColor"), LOCK_CANON.strom, "Glanzfarbe Strom", "Bright strom color");
   mustHex(colorSlot(bright, "uCore"), LOCK_CANON.kern, "Glanzfarbe Kern", "Bright core color");
-  expectGlassLook(bright, "Glanz", "Bright glass", THREE.DoubleSide);
+  expectGlassLook(bright, "Glanz", "Bright glass", THREE.FrontSide);
 
   mustHex(
     colorSlot(rig.nerve, "uColor"),
-    LOCK_CANON.strom,
-    "Nervenfarbe Strom",
-    "Nerve strom color",
+    LOCK_CANON.ader,
+    "Nervenfarbe Ader",
+    "Nerve filament color",
   );
-  mustHex(colorSlot(rig.nerve, "uCore"), LOCK_CANON.kern, "Nervenfarbe Kern", "Nerve core color");
+  mustHex(
+    colorSlot(rig.nerve, "uCore"),
+    LOCK_CANON.aderKern,
+    "Nerven-Kernlicht",
+    "Nerve filament highlight",
+  );
   mustClose(
     numberSlot(rig.nerve, "uSpeed", true),
     LOCK_CANON.nerveSpeed,
@@ -665,7 +690,7 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
   mustHex(colorSlot(rig.signal, "uColor"), LOCK_CANON.signal, "Signalfarbe", "Signal color");
   mustHex(
     colorSlot(rig.signal, "uCore"),
-    LOCK_CANON.signalNerveCore,
+    LOCK_CANON.signalKern,
     "Signal-Kernlicht",
     "Signal nerve highlight",
   );
@@ -686,7 +711,7 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
     "Kernfarbe Signal",
     "Core signal color",
   );
-  mustHex(colorSlot(coreShader, "uCore"), LOCK_CANON.signalCore, "Kern-Glanz", "Core highlight");
+  mustHex(colorSlot(coreShader, "uCore"), LOCK_CANON.signalGlanz, "Kern-Glanz", "Core highlight");
   mustClose(
     numberSlot(coreShader, "uBoost", true),
     LOCK_CANON.coreBoost,
@@ -718,6 +743,27 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
       "The signal ring lost its spark look.",
     );
   }
+
+  const groundMats: THREE.ShaderMaterial[] = [];
+  rig.root.traverse((obj) => {
+    for (const material of materialsOf(obj)) {
+      if (roles.get(material) !== "ground") continue;
+      groundMats.push(material as THREE.ShaderMaterial);
+      if (obj.parent !== rig.root) {
+        breach(
+          "Das Bodenlicht hängt nicht unter den Füßen.",
+          "The ground glow is not under the feet.",
+        );
+      }
+    }
+  });
+  const ground = groundMats[0];
+  if (!ground) breach("Bodenlicht fehlt.", "Ground glow is missing.");
+  mustHex(colorSlot(ground, "uColor"), LOCK_CANON.strom, "Bodenfarbe Strom", "Ground strom color");
+  mustHex(colorSlot(ground, "uCore"), LOCK_CANON.kern, "Bodenfarbe Kern", "Ground core color");
+  mustHex(colorSlot(ground, "uAder"), LOCK_CANON.ader, "Bodenfarbe Ader", "Ground filament color");
+  mustClose(numberSlot(ground, "uBoost", true), LOCK_CANON.groundBoost, "Boden-Boost", "Ground boost");
+  expectGlassLook(ground, "Bodenlicht", "Ground glow", THREE.FrontSide);
 
   rig.root.traverse((obj) => {
     for (const material of materialsOf(obj)) {

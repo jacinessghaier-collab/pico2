@@ -1,10 +1,18 @@
-/** Visual lock. Hourly passes may not change these values. */
+/**
+ * Visual lock for the glass figure.
+ * Void, cyan rim (strom/kern), yellow-green filaments (ader), one green
+ * accent on the figure's right shoulder. Hourly passes may not drift these.
+ */
 
 export const LOCK = {
   void: "#02060A",
   strom: "#3AD7FF",
   kern: "#E7FBFF",
-  signal: "#FF3B4E",
+  ader: "#C8EE3C",
+  aderKern: "#F6FFC8",
+  signal: "#6DFF78",
+  signalKern: "#E4FFE8",
+  signalGlanz: "#F3FFF6",
   proportions: {
     hipY: 0.96,
     chestY: 1.22,

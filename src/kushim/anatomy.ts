@@ -54,13 +54,15 @@ varying vec3 vN;
 varying vec3 vW;
 void main() {
   vec3 viewDir = normalize(cameraPosition - vW);
-  float fres = pow(1.0 - abs(dot(normalize(vN), viewDir)), 2.35);
-  float spine = exp(-abs(vW.x) * 14.0) * smoothstep(0.35, 1.15, vW.y) * smoothstep(1.75, 1.35, vW.y);
-  vec3 chest = vW - vec3(0.0, 1.34, 0.06);
-  float star = exp(-dot(chest, chest) * 18.0);
-  float alpha = fres * 0.95 * uBoost + 0.07 * uBoost + spine * 0.55 + star * 0.7;
-  if (alpha < 0.015) discard;
-  gl_FragColor = vec4(mix(uColor, uCore, fres), alpha);
+  float ndv = clamp(abs(dot(normalize(vN), viewDir)), 0.0, 1.0);
+  float fres = pow(1.0 - ndv, 1.75);
+  float rim = smoothstep(0.04, 0.72, fres);
+  float shell = 0.045 + pow(1.0 - ndv, 0.8) * 0.16;
+  float lift = clamp(uBoost, 0.7, 1.35);
+  float alpha = (shell + rim * 0.7) * lift;
+  if (alpha < 0.025) discard;
+  vec3 col = mix(uColor, uCore, rim * 0.85);
+  gl_FragColor = vec4(col, min(alpha, 0.9));
 }
 `;
 
@@ -73,16 +75,18 @@ attribute float aWidth;
 uniform float uDensity;
 varying float vAlong;
 varying float vRank;
+varying float vSide;
 varying float vVisible;
 void main() {
   vAlong = aAlong;
   vRank = aRank;
+  vSide = aSide;
   vVisible = aRank <= uDensity ? 1.0 : 0.0;
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   vec3 viewDir = normalize((modelViewMatrix * vec4(aDir, 0.0)).xyz);
   vec2 side = normalize(vec2(-viewDir.y, viewDir.x));
   if (length(viewDir.xy) < 0.001) side = vec2(1.0, 0.0);
-  mv.xy += side * aSide * aWidth * 18.0;
+  mv.xy += side * aSide * aWidth * 8.0;
   gl_Position = projectionMatrix * mv;
 }
 `;
@@ -94,13 +98,37 @@ uniform float uTime;
 uniform float uSpeed;
 varying float vAlong;
 varying float vRank;
+varying float vSide;
 varying float vVisible;
 void main() {
   if (vVisible < 0.5) discard;
-  float wave = fract(vAlong * 2.4 - uTime * uSpeed);
-  float head = smoothstep(0.0, 0.02, wave) * smoothstep(0.2, 0.03, wave);
-  float alpha = 0.55 + head * 1.0;
-  gl_FragColor = vec4(mix(uColor, uCore, head), alpha);
+  float edge = smoothstep(1.0, 0.08, abs(vSide));
+  float wave = fract(vAlong * 1.7 - uTime * uSpeed);
+  float head = smoothstep(0.0, 0.035, wave) * smoothstep(0.26, 0.02, wave);
+  float core = smoothstep(0.0, 0.72, 1.0 - abs(vSide));
+  float alpha = (0.22 + head * 0.72) * edge;
+  vec3 col = mix(uColor, uCore, head * 0.8 + core * 0.22);
+  gl_FragColor = vec4(col, alpha);
+}
+`;
+
+const groundFrag = /* glsl */ `
+uniform vec3 uColor;
+uniform vec3 uCore;
+uniform vec3 uAder;
+uniform float uBoost;
+varying vec3 vW;
+void main() {
+  float h = vW.y - 0.03;
+  float nx = vW.x / 0.46;
+  float ny = h / 0.13;
+  float r2 = nx * nx + ny * ny;
+  float alpha = exp(-r2 * 1.35) * smoothstep(1.35, 0.2, r2) * uBoost;
+  if (alpha < 0.025 || h < -0.01) discard;
+  float pool = exp(-r2 * 2.4);
+  vec3 col = mix(uColor, uCore, pool);
+  col = mix(col, uAder, pool * 0.16);
+  gl_FragColor = vec4(col, alpha * 0.72);
 }
 `;
 
@@ -172,7 +200,7 @@ function glassMaterial(boost: number, role: "glass" | "glass-bright") {
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
+    side: THREE.FrontSide,
     uniforms: {
       uColor: { value: new THREE.Color(LOCK.strom) },
       uCore: { value: new THREE.Color(LOCK.kern) },
@@ -194,7 +222,7 @@ function nerveMaterial(color: string, speed: number) {
     side: THREE.DoubleSide,
     uniforms: {
       uColor: { value: new THREE.Color(color) },
-      uCore: { value: new THREE.Color(color === LOCK.signal ? "#ffd0d4" : LOCK.kern) },
+      uCore: { value: new THREE.Color(color === LOCK.signal ? LOCK.signalKern : LOCK.aderKern) },
       uTime: { value: 0 },
       uSpeed: { value: speed },
       uDensity: { value: 1 },
@@ -220,7 +248,7 @@ function capsule(radius: number, length: number) {
   return new THREE.CapsuleGeometry(radius, cyl, 4, 8);
 }
 
-function glowSprite(inner: string, outer: string, spikes: number) {
+function glowSprite(inner: string, outer: string, spikes: number, peak = 1) {
   const canvas = document.createElement("canvas");
   canvas.width = 128;
   canvas.height = 128;
@@ -232,8 +260,10 @@ function glowSprite(inner: string, outer: string, spikes: number) {
   }
   const grd = ctx.createRadialGradient(64, 64, 0, 64, 64, 62);
   grd.addColorStop(0, inner);
-  grd.addColorStop(0.25, outer);
+  grd.addColorStop(0.22, outer);
   grd.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.save();
+  ctx.globalAlpha = peak;
   ctx.fillStyle = grd;
   ctx.fillRect(0, 0, 128, 128);
   ctx.strokeStyle = inner;
@@ -246,10 +276,28 @@ function glowSprite(inner: string, outer: string, spikes: number) {
     ctx.lineTo(64 + Math.cos(angle) * 60, 64 + Math.sin(angle) * 60);
     ctx.stroke();
   }
+  ctx.restore();
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   markTint(tex, inner, outer);
   return tex;
+}
+
+function strand(
+  ribbon: Ribbon,
+  samples: number,
+  rank: number,
+  width: number,
+  at: (u: number) => [number, number, number],
+) {
+  const pts: THREE.Vector3[] = [];
+  for (let i = 0; i <= samples; i++) {
+    const u = i / samples;
+    const [x, y, z] = at(u);
+    const wob = Math.sin(u * 12.3 + rank * 17.0 + x * 8.0) * width * 1.4;
+    pts.push(new THREE.Vector3(x + wob, y, z + wob * 0.65));
+  }
+  addRibbon(ribbon, pts, rank, width);
 }
 
 function alongBone(
@@ -261,7 +309,7 @@ function alongBone(
     const pts: THREE.Vector3[] = [];
     for (let i = 0; i <= 7; i++) {
       const u = i / 7;
-      const wobble = Math.sin(u * 10 + off.seed) * 0.005;
+      const wobble = Math.sin(u * 10 + off.seed) * 0.008;
       pts.push(new THREE.Vector3(off.x + wobble, -u * length, off.z + wobble * 0.6));
     }
     addRibbon(ribbon, pts, off.rank, off.width);
@@ -293,8 +341,8 @@ export function createKushim(): Rig {
   const P = LOCK.proportions;
   const root = new THREE.Group();
   const glass = glassMaterial(1, "glass");
-  const bright = glassMaterial(1.8, "glass-bright");
-  const nerve = nerveMaterial(LOCK.strom, 0.34);
+  const bright = glassMaterial(1.15, "glass-bright");
+  const nerve = nerveMaterial(LOCK.ader, 0.34);
   const signal = nerveMaterial(LOCK.signal, 0.2);
   const disposables: Array<THREE.BufferGeometry | THREE.Material | THREE.Texture> = [
     glass,
@@ -308,15 +356,16 @@ export function createKushim(): Rig {
   root.add(chest);
 
   const torsoPts = [
-    new THREE.Vector2(0.055, -0.3),
-    new THREE.Vector2(0.12, -0.24),
-    new THREE.Vector2(0.15, -0.12),
-    new THREE.Vector2(0.125, 0.0),
-    new THREE.Vector2(0.15, 0.12),
-    new THREE.Vector2(0.175, 0.22),
-    new THREE.Vector2(0.15, 0.3),
-    new THREE.Vector2(0.075, 0.38),
-    new THREE.Vector2(0.048, 0.46),
+    new THREE.Vector2(0.001, -0.34),
+    new THREE.Vector2(0.1, -0.28),
+    new THREE.Vector2(0.128, -0.16),
+    new THREE.Vector2(0.096, -0.04),
+    new THREE.Vector2(0.112, 0.08),
+    new THREE.Vector2(0.155, 0.18),
+    new THREE.Vector2(0.178, 0.27),
+    new THREE.Vector2(0.142, 0.35),
+    new THREE.Vector2(0.058, 0.43),
+    new THREE.Vector2(0.001, 0.5),
   ];
   const torso = solid(chest, new THREE.LatheGeometry(torsoPts, 28), glass);
   torso.scale.set(1.05, 1, 0.72);
@@ -349,7 +398,7 @@ export function createKushim(): Rig {
     brow.rotation.y = side * -0.3;
   }
 
-  const starTex = glowSprite("#ffffff", LOCK.strom, 10);
+  const starTex = glowSprite("#ffffff", LOCK.strom, 0, 0.28);
   const starMat = new THREE.SpriteMaterial({
     map: starTex,
     blending: THREE.AdditiveBlending,
@@ -360,7 +409,8 @@ export function createKushim(): Rig {
   markMaterial(starMat, "sprite");
   const star = new THREE.Sprite(starMat);
   star.position.set(0, 0.14, 0.1);
-  star.scale.set(0.36, 0.36, 1);
+  star.scale.set(0.08, 0.08, 1);
+  starMat.opacity = 0.45;
   star.renderOrder = 3;
   chest.add(star);
   disposables.push(starTex, star.material);
@@ -379,14 +429,14 @@ export function createKushim(): Rig {
   for (const side of [-1, 1]) {
     const eye = new THREE.Sprite(eyeMat);
     eye.position.set(side * 0.032, 0.012, P.headRadius * 0.92);
-    eye.scale.set(0.028, 0.028, 1);
+    eye.scale.set(0.02, 0.02, 1);
     eye.renderOrder = 4;
     eye.userData.restX = eye.position.x;
     eye.userData.restY = eye.position.y;
     head.add(eye);
     eyes.push(eye);
   }
-  const browTex = glowSprite("#ffffff", LOCK.kern, 4);
+  const browTex = glowSprite("#ffffff", LOCK.kern, 0, 0.35);
   const browMat = new THREE.SpriteMaterial({
     map: browTex,
     blending: THREE.AdditiveBlending,
@@ -397,94 +447,124 @@ export function createKushim(): Rig {
   markMaterial(browMat, "sprite");
   const forehead = new THREE.Sprite(browMat);
   forehead.position.set(0, 0.055, P.headRadius * 0.9);
-  forehead.scale.set(0.05, 0.05, 1);
+  forehead.scale.set(0.028, 0.028, 1);
+  browMat.opacity = 0.4;
   forehead.renderOrder = 4;
   head.add(forehead);
   disposables.push(browTex, forehead.material);
 
-  const torsoNerves = emptyRibbon();
-  const spine: THREE.Vector3[] = [];
-  for (let i = 0; i <= 12; i++) {
-    const u = i / 12;
-    spine.push(new THREE.Vector3(0, -0.26 + u * 0.78, -0.02 + Math.sin(u * Math.PI) * 0.015));
+  const headNerves = emptyRibbon();
+  for (let i = 0; i < 16; i++) {
+    const theta = (i / 16) * Math.PI * 2 + 0.3;
+    const phi = 0.45 + (i % 6) * 0.2;
+    strand(headNerves, 6, 0.08 + (i % 5) * 0.1, 0.00135, (u) => {
+      const r = 0.028 + u * 0.07;
+      const p = phi * (0.45 + u * 0.55);
+      return [
+        Math.cos(theta) * Math.sin(p) * r,
+        Math.cos(p) * r * 0.9 - 0.008,
+        Math.sin(theta) * Math.sin(p) * r * 0.75,
+      ];
+    });
   }
-  addRibbon(torsoNerves, spine, 0.05, 0.01);
-  for (const side of [-1, 1]) {
-    const chain: THREE.Vector3[] = [];
-    for (let i = 0; i <= 10; i++) {
-      const u = i / 10;
-      chain.push(new THREE.Vector3(side * 0.028, -0.24 + u * 0.7, -0.03));
-    }
-    addRibbon(torsoNerves, chain, 0.2, 0.0035);
+  strand(headNerves, 8, 0.1, 0.0018, (u) => [0, -0.02 + u * 0.1, 0.02 + Math.sin(u * Math.PI) * 0.02]);
+  commitRibbon(head, headNerves, nerve);
+
+  const torsoNerves = emptyRibbon();
+  strand(torsoNerves, 14, 0.04, 0.0042, (u) => [
+    Math.sin(u * 6.0) * 0.004,
+    -0.28 + u * 0.82,
+    -0.03 + Math.sin(u * Math.PI) * 0.02,
+  ]);
+  strand(torsoNerves, 12, 0.08, 0.0024, (u) => [0, -0.22 + u * 0.62, 0.07]);
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    strand(torsoNerves, 5, 0.14, 0.0016, (u) => [
+      Math.cos(a) * (0.016 + u * 0.01),
+      0.3 + u * 0.16,
+      Math.sin(a) * 0.014,
+    ]);
+  }
+  for (const side of [-1, 1] as const) {
+    strand(torsoNerves, 12, 0.12, 0.0022, (u) => [
+      side * (0.02 + Math.sin(u * Math.PI) * 0.012),
+      -0.26 + u * 0.72,
+      -0.04,
+    ]);
     for (let rib = 0; rib < 8; rib++) {
       const t = rib / 7;
-      const y = -0.02 + t * 0.28;
-      const reach = 0.09 + Math.sin(t * Math.PI) * 0.075;
-      const pts: THREE.Vector3[] = [];
-      for (let s = 0; s <= 8; s++) {
-        const u = s / 8;
-        pts.push(
-          new THREE.Vector3(
-            side * reach * Math.sin(u * Math.PI * 0.9),
-            y - u * 0.035,
-            -0.03 + u * 0.12,
-          ),
-        );
+      const y = -0.06 + t * 0.34 + Math.sin(rib * 2.1) * 0.012;
+      const reach = 0.055 + Math.sin(t * Math.PI) * 0.1;
+      const bow = 0.02 + (rib % 3) * 0.012;
+      strand(torsoNerves, 7, 0.18 + (rib % 5) * 0.07, 0.00145, (u) => [
+        side * (0.02 + reach * Math.sin(u * Math.PI * (0.75 + (rib % 3) * 0.08))),
+        y - u * bow + Math.sin(u * 6.5 + rib) * 0.008,
+        -0.035 + u * (0.08 + (rib % 2) * 0.05),
+      ]);
+      if (rib % 2 === 0) {
+        strand(torsoNerves, 4, 0.34 + rib * 0.04, 0.0012, (u) => [
+          side * (0.04 + u * 0.07),
+          y - 0.02 - u * 0.08,
+          0.02 + u * 0.04,
+        ]);
       }
-      addRibbon(torsoNerves, pts, 0.15 + rib * 0.02, 0.0032);
     }
-    const clavicle: THREE.Vector3[] = [];
-    for (let s = 0; s <= 6; s++) {
-      const u = s / 6;
-      clavicle.push(new THREE.Vector3(side * (0.02 + u * 0.18), 0.3 - u * 0.02, 0.07 - u * 0.04));
+    strand(torsoNerves, 7, 0.1, 0.002, (u) => [
+      side * (0.02 + u * 0.17),
+      0.3 - u * 0.03,
+      0.06 - u * 0.05,
+    ]);
+    strand(torsoNerves, 6, 0.42, 0.0015, (u) => [
+      side * (0.05 + Math.sin(u * Math.PI) * 0.1),
+      0.22 - u * 0.12,
+      -0.07,
+    ]);
+    for (let i = 0; i < 6; i++) {
+      const spread = (i - 2.5) * 0.018;
+      strand(torsoNerves, 7, 0.2 + i * 0.06, 0.0015, (u) => [
+        side * (0.012 + u * 0.05 + spread * 0.35),
+        0.04 - u * 0.28,
+        0.04 - u * 0.06,
+      ]);
     }
-    addRibbon(torsoNerves, clavicle, 0.1, 0.004);
-    const scapula = [
-      new THREE.Vector3(side * 0.06, 0.22, -0.08),
-      new THREE.Vector3(side * 0.16, 0.26, -0.07),
-      new THREE.Vector3(side * 0.12, 0.1, -0.07),
-      new THREE.Vector3(side * 0.06, 0.22, -0.08),
-    ];
-    addRibbon(torsoNerves, scapula, 0.55, 0.0028);
   }
-  const sternum: THREE.Vector3[] = [];
-  for (let i = 0; i <= 6; i++) sternum.push(new THREE.Vector3(0, 0.02 + i * 0.045, 0.09));
-  addRibbon(torsoNerves, sternum, 0.08, 0.0045);
   commitRibbon(chest, torsoNerves, nerve);
 
   function makeArm(side: 1 | -1) {
     const shoulder = new THREE.Group();
     shoulder.position.set(side * P.shoulderX, P.shoulderLocalY, 0);
     chest.add(shoulder);
-    const joint = solid(shoulder, new THREE.SphereGeometry(0.048, 14, 10), bright);
-    joint.scale.set(1.05, 1, 0.9);
-    const upperMesh = solid(shoulder, capsule(0.046, P.upperArm), glass);
+    const joint = solid(shoulder, new THREE.SphereGeometry(0.022, 12, 8), bright);
+    joint.scale.set(1, 0.85, 0.75);
+    const upperMesh = solid(shoulder, capsule(0.038, P.upperArm), glass);
     upperMesh.position.y = -P.upperArm / 2;
     const upperN = emptyRibbon();
     alongBone(upperN, P.upperArm, [
-      { x: 0.01 * side, z: 0.012, rank: 0.12, width: 0.0036, seed: side },
-      { x: -0.012 * side, z: -0.006, rank: 0.4, width: 0.0026, seed: side * 2 },
-      { x: 0.0, z: 0.02, rank: 0.7, width: 0.0022, seed: side * 3 },
+      { x: 0.008 * side, z: 0.01, rank: 0.1, width: 0.0024, seed: side },
+      { x: -0.01 * side, z: -0.006, rank: 0.28, width: 0.0018, seed: side * 2 },
+      { x: 0.0, z: 0.014, rank: 0.48, width: 0.0016, seed: side * 3 },
+      { x: 0.014 * side, z: 0.0, rank: 0.66, width: 0.0014, seed: side * 4 },
     ]);
     commitRibbon(shoulder, upperN, nerve);
 
     const elbow = new THREE.Group();
     elbow.position.y = -P.upperArm;
     shoulder.add(elbow);
-    solid(elbow, new THREE.SphereGeometry(0.032, 12, 8), bright);
-    const foreMesh = solid(elbow, capsule(0.036, P.foreArm), glass);
+    solid(elbow, new THREE.SphereGeometry(0.016, 10, 8), bright);
+    const foreMesh = solid(elbow, capsule(0.03, P.foreArm), glass);
     foreMesh.position.y = -P.foreArm / 2;
     const foreN = emptyRibbon();
     alongBone(foreN, P.foreArm, [
-      { x: 0.008 * side, z: 0.01, rank: 0.18, width: 0.003, seed: 4 },
-      { x: -0.008 * side, z: -0.004, rank: 0.5, width: 0.0024, seed: 5 },
+      { x: 0.006 * side, z: 0.008, rank: 0.14, width: 0.002, seed: 4 },
+      { x: -0.007 * side, z: -0.004, rank: 0.36, width: 0.0016, seed: 5 },
+      { x: 0.0, z: 0.01, rank: 0.58, width: 0.0014, seed: 6 },
     ]);
     commitRibbon(elbow, foreN, nerve);
 
     const wrist = new THREE.Group();
     wrist.position.y = -P.foreArm;
     elbow.add(wrist);
-    solid(wrist, new THREE.SphereGeometry(0.022, 10, 8), bright);
+    solid(wrist, new THREE.SphereGeometry(0.012, 8, 6), bright);
     const palm = solid(wrist, new THREE.SphereGeometry(0.034, 12, 8), glass);
     palm.position.set(0, -0.03, 0.01);
     palm.scale.set(0.85, 1.15, 0.42);
@@ -530,8 +610,8 @@ export function createKushim(): Rig {
     blending: THREE.AdditiveBlending,
     uniforms: {
       uColor: { value: new THREE.Color(LOCK.signal) },
-      uCore: { value: new THREE.Color("#ffd5d8") },
-      uBoost: { value: 2.4 },
+      uCore: { value: new THREE.Color(LOCK.signalGlanz) },
+      uBoost: { value: 1.2 },
     },
     vertexShader: glassVert,
     fragmentShader: glassFrag,
@@ -539,7 +619,7 @@ export function createKushim(): Rig {
   sealShaderChannels(coreMat, ["uColor", "uCore", "uBoost"]);
   markMaterial(coreMat, "core");
   disposables.push(coreMat);
-  const core = solid(right.shoulder, new THREE.SphereGeometry(0.045, 16, 12), coreMat);
+  const core = solid(right.shoulder, new THREE.SphereGeometry(0.026, 16, 12), coreMat);
   core.position.set(-0.01, -0.05, 0.03);
   core.renderOrder = 4;
 
@@ -555,11 +635,11 @@ export function createKushim(): Rig {
   ringGeo.setAttribute("position", new THREE.BufferAttribute(ringPos, 3));
   const ringMat = new THREE.PointsMaterial({
     color: LOCK.signal,
-    size: 0.028,
+    size: 0.012,
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
-    opacity: 0.8,
+    opacity: 0.22,
     sizeAttenuation: true,
   });
   sealLookColor(ringMat.color);
@@ -577,13 +657,14 @@ export function createKushim(): Rig {
     hip.userData.lockSide = side;
     hip.position.set(side * 0.11, P.hipY, 0);
     root.add(hip);
-    solid(hip, new THREE.SphereGeometry(0.055, 14, 10), bright);
-    const thighMesh = solid(hip, capsule(0.068, P.thigh), glass);
+    solid(hip, new THREE.SphereGeometry(0.028, 12, 8), bright);
+    const thighMesh = solid(hip, capsule(0.056, P.thigh), glass);
     thighMesh.position.y = -P.thigh / 2;
     const hipN = emptyRibbon();
     alongBone(hipN, P.thigh, [
-      { x: 0.01 * side, z: 0.015, rank: 0.1, width: 0.0034, seed: side * 6 },
-      { x: -0.016 * side, z: -0.01, rank: 0.45, width: 0.0024, seed: 7 },
+      { x: 0.008 * side, z: 0.012, rank: 0.1, width: 0.0022, seed: side * 6 },
+      { x: -0.012 * side, z: -0.008, rank: 0.32, width: 0.0017, seed: 7 },
+      { x: 0.002 * side, z: 0.018, rank: 0.55, width: 0.0014, seed: 11 },
     ]);
     const crest: THREE.Vector3[] = [];
     for (let s = 0; s <= 6; s++) {
@@ -603,14 +684,15 @@ export function createKushim(): Rig {
     knee.userData.lockKey = "knee";
     knee.position.y = -P.thigh;
     hip.add(knee);
-    const cap = solid(knee, new THREE.SphereGeometry(0.04, 12, 8), bright);
-    cap.position.z = 0.02;
-    const shinMesh = solid(knee, capsule(0.046, P.shin), glass);
+    const cap = solid(knee, new THREE.SphereGeometry(0.02, 10, 8), bright);
+    cap.position.z = 0.015;
+    const shinMesh = solid(knee, capsule(0.038, P.shin), glass);
     shinMesh.position.y = -P.shin / 2;
     const shinN = emptyRibbon();
     alongBone(shinN, P.shin, [
-      { x: 0.008 * side, z: 0.01, rank: 0.16, width: 0.0028, seed: 8 },
-      { x: -0.006 * side, z: -0.008, rank: 0.6, width: 0.0022, seed: 9 },
+      { x: 0.006 * side, z: 0.008, rank: 0.14, width: 0.0018, seed: 8 },
+      { x: -0.006 * side, z: -0.006, rank: 0.4, width: 0.0015, seed: 9 },
+      { x: 0.0, z: 0.012, rank: 0.62, width: 0.0013, seed: 12 },
     ]);
     commitRibbon(knee, shinN, nerve);
 
@@ -618,7 +700,7 @@ export function createKushim(): Rig {
     ankle.userData.lockKey = "ankle";
     ankle.position.y = -P.shin;
     knee.add(ankle);
-    solid(ankle, new THREE.SphereGeometry(0.026, 10, 8), bright);
+    solid(ankle, new THREE.SphereGeometry(0.014, 8, 6), bright);
     const foot = new THREE.Group();
     ankle.add(foot);
     const footMesh = solid(foot, capsule(0.028, 0.16), glass);
@@ -648,10 +730,33 @@ export function createKushim(): Rig {
   const ringPts: THREE.Vector3[] = [];
   for (let i = 0; i <= 16; i++) {
     const a = (i / 16) * Math.PI * 2;
-    ringPts.push(new THREE.Vector3(Math.cos(a) * 0.13, P.hipY + 0.02, Math.sin(a) * 0.08));
+    ringPts.push(new THREE.Vector3(Math.cos(a) * 0.09, P.hipY + 0.015, Math.sin(a) * 0.05));
   }
-  addRibbon(pelvis, ringPts, 0.12, 0.0036);
+  addRibbon(pelvis, ringPts, 0.12, 0.0022);
   commitRibbon(root, pelvis, nerve);
+
+  const groundMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.FrontSide,
+    uniforms: {
+      uColor: { value: new THREE.Color(LOCK.strom) },
+      uCore: { value: new THREE.Color(LOCK.kern) },
+      uAder: { value: new THREE.Color(LOCK.ader) },
+      uBoost: { value: 1 },
+    },
+    vertexShader: glassVert,
+    fragmentShader: groundFrag,
+  });
+  sealShaderChannels(groundMat, ["uColor", "uCore", "uAder", "uBoost"]);
+  markMaterial(groundMat, "ground");
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.7), groundMat);
+  ground.position.set(0, 0.28, -0.06);
+  ground.renderOrder = 0;
+  ground.frustumCulled = false;
+  root.add(ground);
+  disposables.push(groundMat);
 
   root.traverse((obj: THREE.Object3D) => {
     const mesh = obj as THREE.Mesh;

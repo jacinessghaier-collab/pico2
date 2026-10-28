@@ -7,7 +7,11 @@ describe("visual lock", () => {
     assert.equal(LOCK.void, "#02060A");
     assert.equal(LOCK.strom, "#3AD7FF");
     assert.equal(LOCK.kern, "#E7FBFF");
-    assert.equal(LOCK.signal, "#FF3B4E");
+    assert.equal(LOCK.ader, "#C8EE3C");
+    assert.equal(LOCK.aderKern, "#F6FFC8");
+    assert.equal(LOCK.signal, "#6DFF78");
+    assert.equal(LOCK.signalKern, "#E4FFE8");
+    assert.equal(LOCK.signalGlanz, "#F3FFF6");
     assert.deepEqual(LOCK.proportions, {
       hipY: 0.96,
       chestY: 1.22,
