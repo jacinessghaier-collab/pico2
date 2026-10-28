@@ -25,12 +25,33 @@ export class LockBreach extends Error {
 
 /** Independent copy of the locked look. lock.ts must match; the test repeats the palette. */
 export const LOCK_CANON = {
-  void: "#02060A",
+  void: "#000000",
   strom: "#3AD7FF",
   kern: "#E7FBFF",
   signal: "#FF3B4E",
   filament: "#D4F04A",
   filamentKern: "#F7FFC2",
+  glass: {
+    fill: 0.004,
+    rim: 0.95,
+    rimPower: 4.2,
+    spine: 0.08,
+    spineTight: 110,
+    star: 0.04,
+    starTight: 160,
+    sprite: 0.04,
+  },
+  aura: {
+    count: 112,
+    opacity: 0.14,
+    size: 0.2,
+  },
+  ground: {
+    opacity: 0.2,
+    y: 0.012,
+    z: 0.05,
+    radius: 0.34,
+  },
   signalNerveCore: "#FF8A2A",
   signalCore: "#FFB15A",
   spriteInner: "#FFFFFF",
@@ -92,7 +113,15 @@ function freezeCanon(value: object) {
 freezeCanon(LOCK_CANON);
 
 export type MaterialRole =
-  "glass" | "glass-bright" | "nerve" | "signal" | "core" | "sprite" | "ring";
+  | "glass"
+  | "glass-bright"
+  | "nerve"
+  | "signal"
+  | "core"
+  | "sprite"
+  | "ring"
+  | "aura"
+  | "ground";
 
 export type LockedRig = {
   root: THREE.Object3D;
@@ -244,8 +273,18 @@ export function assertLockTable() {
   if (!Object.isFrozen(LOCK_CANON) || !Object.isFrozen(LOCK_CANON.proportions)) {
     breach("Die Vergleichstabelle ist nicht eingefroren.", "The comparison table is not frozen.");
   }
+  if (
+    !Object.isFrozen(LOCK.glass) ||
+    !Object.isFrozen(LOCK.aura) ||
+    !Object.isFrozen(LOCK.ground) ||
+    !Object.isFrozen(LOCK_CANON.glass) ||
+    !Object.isFrozen(LOCK_CANON.aura) ||
+    !Object.isFrozen(LOCK_CANON.ground)
+  ) {
+    breach("Die Hüllenwerte sind nicht eingefroren.", "The shell values are not frozen.");
+  }
   const top = Object.keys(LOCK).sort().join(",");
-  if (top !== "filament,filamentKern,kern,proportions,signal,strom,void") {
+  if (top !== "aura,filament,filamentKern,glass,ground,kern,proportions,signal,strom,void") {
     breach("LOCK hat andere Schlüssel.", "LOCK has different keys.");
   }
   const colors = ["void", "strom", "kern", "signal", "filament", "filamentKern"] as const;
@@ -274,6 +313,55 @@ export function assertLockTable() {
       );
     }
   }
+  expectNest(LOCK.glass, LOCK_CANON.glass, "glass");
+  expectNest(LOCK.aura, LOCK_CANON.aura, "aura");
+  expectNest(LOCK.ground, LOCK_CANON.ground, "ground");
+}
+
+function expectNest(
+  live: { readonly [key: string]: number },
+  canon: { readonly [key: string]: number },
+  nest: string,
+) {
+  const liveKeys = Object.keys(live).sort().join(",");
+  const canonKeys = Object.keys(canon).sort().join(",");
+  if (liveKeys !== canonKeys) {
+    breach(`LOCK.${nest} hat andere Schlüssel.`, `LOCK.${nest} has different keys.`);
+  }
+  for (const key of Object.keys(canon)) {
+    if (live[key] !== canon[key]) {
+      breach(
+        `LOCK.${nest}.${key} ist ${live[key]}, erwartet ${canon[key]}.`,
+        `LOCK.${nest}.${key} is ${live[key]}, expected ${canon[key]}.`,
+      );
+    }
+  }
+}
+
+function expectShell(material: THREE.ShaderMaterial, de: string, en: string) {
+  const shell = LOCK_CANON.glass;
+  mustClose(numberSlot(material, "uFill", true), shell.fill, `${de}-Füllung`, `${en} fill`);
+  mustClose(numberSlot(material, "uRim", true), shell.rim, `${de}-Rand`, `${en} rim`);
+  mustClose(
+    numberSlot(material, "uRimPower", true),
+    shell.rimPower,
+    `${de}-Randschärfe`,
+    `${en} rim power`,
+  );
+  mustClose(numberSlot(material, "uSpine", true), shell.spine, `${de}-Strahl`, `${en} beam`);
+  mustClose(
+    numberSlot(material, "uSpineTight", true),
+    shell.spineTight,
+    `${de}-Strahlbreite`,
+    `${en} beam width`,
+  );
+  mustClose(numberSlot(material, "uStar", true), shell.star, `${de}-Brustkern`, `${en} chest core`);
+  mustClose(
+    numberSlot(material, "uStarTight", true),
+    shell.starTight,
+    `${de}-Brustkern-Enge`,
+    `${en} chest-core tightness`,
+  );
 }
 
 export function markMaterial(material: THREE.Material, role: MaterialRole) {
@@ -616,12 +704,15 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
   expectCount("core", 1);
   expectCount("ring", 1);
   expectCount("sprite", 3);
+  expectCount("aura", 1);
+  expectCount("ground", 1);
 
   const glassBoost = numberSlot(rig.glass, "uBoost", true);
   mustClose(glassBoost, LOCK_CANON.glassBoost, "Glas-Boost", "Glass boost");
   mustHex(colorSlot(rig.glass, "uColor"), LOCK_CANON.strom, "Glasfarbe Strom", "Glass strom color");
   mustHex(colorSlot(rig.glass, "uCore"), LOCK_CANON.kern, "Glasfarbe Kern", "Glass core color");
   expectGlassLook(rig.glass, "Glas", "Glass", THREE.DoubleSide);
+  expectShell(rig.glass, "Glas", "Glass");
 
   const brightMats: THREE.ShaderMaterial[] = [];
   rig.root.traverse((obj) => {
@@ -640,6 +731,7 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
   mustHex(colorSlot(bright, "uColor"), LOCK_CANON.strom, "Glanzfarbe Strom", "Bright strom color");
   mustHex(colorSlot(bright, "uCore"), LOCK_CANON.kern, "Glanzfarbe Kern", "Bright core color");
   expectGlassLook(bright, "Glanz", "Bright glass", THREE.DoubleSide);
+  expectShell(bright, "Glanz", "Bright glass");
 
   mustHex(
     colorSlot(rig.nerve, "uColor"),
@@ -758,6 +850,79 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
       }
     }
   });
+  auditShellExtras(rig);
+}
+
+function objectByKey(root: THREE.Object3D, key: string): THREE.Object3D | null {
+  const hits: THREE.Object3D[] = [];
+  root.traverse((obj) => {
+    if (markData(obj).lockKey === key) hits.push(obj);
+  });
+  if (hits.length > 1) breach(`Schlüssel ${key} ist doppelt.`, `Key ${key} is duplicated.`);
+  return hits[0] ?? null;
+}
+
+function auditShellExtras(rig: LockedRig) {
+  const chest = objectByKey(rig.chest, "chest-core");
+  if (!chest) breach("Der Brustkern fehlt.", "The chest core is missing.");
+  mustClose(chest.scale.x, LOCK_CANON.glass.sprite, "Brustkern-Größe", "Chest-core size");
+  mustClose(chest.scale.y, LOCK_CANON.glass.sprite, "Brustkern-Größe", "Chest-core size");
+  mustClose(chest.scale.z, 1, "Brustkern-Tiefe", "Chest-core depth");
+
+  const aura = objectByKey(rig.root, "aura");
+  if (!aura || aura.parent !== rig.root) {
+    breach("Die Aura hängt nicht am Körper.", "The aura is not on the body.");
+  }
+  const auraMat = (aura as THREE.Points).material;
+  if (!auraMat || Array.isArray(auraMat) || roles.get(auraMat) !== "aura") {
+    breach("Aura-Material fehlt.", "Aura material is missing.");
+  }
+  const points = auraMat as THREE.PointsMaterial;
+  mustHex(points.color, LOCK_CANON.strom, "Aurafarbe", "Aura color");
+  mustClose(points.size, LOCK_CANON.aura.size, "Auragröße", "Aura size");
+  mustClose(points.opacity, LOCK_CANON.aura.opacity, "Auradeckkraft", "Aura opacity");
+  if (
+    !points.transparent ||
+    points.depthWrite ||
+    points.blending !== THREE.AdditiveBlending ||
+    points.premultipliedAlpha ||
+    !points.sizeAttenuation
+  ) {
+    breach("Die Aura hat ihren weichen Rand verloren.", "The aura lost its soft edge.");
+  }
+  const attr = (aura as THREE.Points).geometry?.getAttribute("position");
+  if (!attr || attr.count !== LOCK_CANON.aura.count) {
+    breach(
+      "Die Aura hat nicht mehr die gesperrte Punktzahl.",
+      "The aura no longer has its locked point count.",
+    );
+  }
+
+  const ground = objectByKey(rig.root, "ground");
+  if (!ground || ground.parent !== rig.root) {
+    breach("Das Bodenlicht hängt nicht am Körper.", "The ground light is not on the body.");
+  }
+  mustClose(ground.position.y, LOCK_CANON.ground.y, "Bodenlicht-Höhe", "Ground-light height");
+  mustClose(ground.position.z, LOCK_CANON.ground.z, "Bodenlicht-Tiefe", "Ground-light depth");
+  mustClose(ground.position.x, 0, "Bodenlicht seitlich", "Ground-light lateral");
+  const groundMat = (ground as THREE.Mesh).material;
+  if (!groundMat || Array.isArray(groundMat) || roles.get(groundMat) !== "ground") {
+    breach("Bodenlicht-Material fehlt.", "Ground-light material is missing.");
+  }
+  const shader = groundMat as THREE.ShaderMaterial;
+  mustHex(colorSlot(shader, "uColor"), LOCK_CANON.strom, "Bodenlichtfarbe", "Ground-light color");
+  mustClose(
+    numberSlot(shader, "uOpacity", true),
+    LOCK_CANON.ground.opacity,
+    "Bodenlicht-Deckkraft",
+    "Ground-light opacity",
+  );
+  expectGlassLook(shader, "Bodenlicht", "Ground light", THREE.DoubleSide);
+  const radius = (ground as THREE.Mesh<THREE.CircleGeometry>).geometry?.parameters?.radius;
+  if (typeof radius !== "number" || !Number.isFinite(radius)) {
+    breach("Bodenlichtradius fehlt.", "Ground-light radius is missing.");
+  }
+  mustClose(radius, LOCK_CANON.ground.radius, "Bodenlichtradius", "Ground-light radius");
 }
 
 function auditSpokenPart(obj: THREE.Object3D, rig: LockedRig, baseline: Baseline) {

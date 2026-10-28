@@ -67,13 +67,17 @@ function frame(aspect: number) {
 
 describe("appearance lock table", () => {
   it("matches the masterprompt palette and proportions", () => {
-    assert.equal(LOCK.void, "#02060A");
+    assert.equal(LOCK.void, "#000000");
     assert.equal(LOCK.strom, "#3AD7FF");
     assert.equal(LOCK.kern, "#E7FBFF");
     assert.equal(LOCK.signal, "#FF3B4E");
     assert.equal(LOCK.filament, "#D4F04A");
     assert.equal(LOCK.filamentKern, "#F7FFC2");
-    assert.equal(LOCK_CANON.void, "#02060A");
+    assert.equal(LOCK_CANON.void, "#000000");
+    assert.equal(LOCK_CANON.glass.fill, 0.004);
+    assert.equal(LOCK_CANON.glass.rim, 0.95);
+    assert.equal(LOCK_CANON.aura.opacity, 0.14);
+    assert.equal(LOCK_CANON.ground.radius, 0.34);
     assert.equal(LOCK_CANON.strom, "#3AD7FF");
     assert.equal(LOCK_CANON.kern, "#E7FBFF");
     assert.equal(LOCK_CANON.signal, "#FF3B4E");
@@ -141,6 +145,27 @@ describe("figure lock", () => {
       assert.throws(() => {
         (rig.glass.uniforms.uColor.value as THREE.Color).set("#ffffff");
       }, TypeError);
+    } finally {
+      rig.dispose();
+    }
+  });
+
+  it("keeps the red shoulder hotspot off while idle", () => {
+    const rig = createKushim();
+    try {
+      for (let step = 0; step < 8; step++) {
+        tickKushim(
+          rig,
+          pose({ gesture: "idle", hour: 0, shoulderTopic: false, reducedMotion: step % 2 === 0 }),
+          0.05,
+          step * 0.4,
+        );
+        assert.equal(rig.signal.uniforms.uShow.value, 0);
+        const coreShow = (rig.core.material as THREE.ShaderMaterial).uniforms.uShow?.value;
+        assert.equal(coreShow, 0);
+        assert.equal((rig.ring.material as THREE.PointsMaterial).opacity, 0);
+        assert.doesNotThrow(() => assertRigLock(rig, "live"));
+      }
     } finally {
       rig.dispose();
     }
@@ -397,7 +422,7 @@ describe("camera and void", () => {
   });
 
   it("requires the opaque void and no tone mapping", () => {
-    const color = new THREE.Color("#02060A");
+    const color = new THREE.Color("#000000");
     const gl = {
       toneMapping: THREE.NoToneMapping,
       outputColorSpace: THREE.SRGBColorSpace,
@@ -519,7 +544,7 @@ describe("stability read", () => {
       assert.equal(after, sealedNodes);
       assert.equal(scene.children.length, 1);
       assert.equal(scene.children[0], rig.root);
-      assert.equal(LOCK.void, "#02060A");
+      assert.equal(LOCK.void, "#000000");
       assert.equal(LOCK.strom, "#3AD7FF");
       assert.equal(LOCK.kern, "#E7FBFF");
       assert.equal(LOCK.signal, "#FF3B4E");
