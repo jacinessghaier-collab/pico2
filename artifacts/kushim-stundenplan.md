@@ -24,14 +24,16 @@ Bildzeit: `src/kushim/frame-time.ts` misst das rohe Frame-Delta der laufenden Sz
 
 Lock erneut gelesen: dieselbe Prüfung in `src/kushim/lock-check.ts`. Ein Bruch wirft weiter `LockBreach`, deutsch und englisch. Zusätzlich fallen ein ausgetauschter Shader oder eine andere Geometrie, ein umgehängtes oder ausgeblendetes Teil, eine seitliche oder kopfüber stehende Kamera, ein verschobener Szenenursprung, ein anderer Farbraum und ein Raum mit Hintergrund, Nebel, Ersatzmaterial, Umgebungskarte oder einem zweiten Objekt. `lock.ts` und die Figur sind unverändert. Der Takt bleibt zwei Sekunden.
 
-Bau: Stufe 9 von 10 erledigt (kürzerer erster Satz). Nächste Stufe ist der Stabilitätscheck; der Lock liegt schon. Satzmelodie bleibt ausgesetzt. Stundenpipeline: Schritt 8 Mund in der Ruhe, gemessen in `src/kushim/speech.test.ts`, und Lock erneut gelesen. Schritt 9: der letzte Visem endet mit dem Texttakt, dieselbe Messung. Die Pause von 320 ms ist geprüft und geblieben. Die Form des Mundes bleibt. Marker: `src/kushim/stand.ts`.
+Stabilitätscheck um 09:00: dieselbe Prüfung, gelesen über die Trainingsstunden, Takt `LOCK_READ_SEC` (zwei Sekunden). Kein zweiter Check, kein Post-Pass, kein visueller Eingriff. Gemessen in `src/kushim/lock-check.test.ts`. `lock.ts` bleibt. Die Pause von 320 ms bleibt. Satzmelodie bleibt ausgesetzt.
+
+Bau: Stufe 9 von 10 erledigt (kürzerer erster Satz). Nächste Stufe ist weiter der Stabilitätscheck; der Lock liegt schon. Die Stundenpipeline hat ihn um 09:00 nur gelesen, ohne einen neuen Bau und ohne eine elfte Stufe. Der letzte Visem endet mit dem Texttakt, gemessen in `src/kushim/speech.test.ts`. Satzmelodie bleibt ausgesetzt. Die Pause von 320 ms bleibt. Marker: `src/kushim/stand.ts`.
 
 ## Fünf Schritte voraus
 
 Geprüft. Abkürzungen stehen dabei. Die Satzmelodie ist keiner dieser Schritte.
 
 1. **Antwort nur durch `shapeReply`.** Erledigt: ein Aufruf in der Oberfläche, Rohtext aus Server und Ersatz, die Formregeln sind aus dem Systemtext. Keine weitere Form, kein zweiter Block im Systemtext. Die nächsten fünf Schritte dieser Zeile stehen unter „Antwortform“.
-2. **Spitze nur lesen.** Die Lock-Prüfung läuft schon höchstens alle zwei Sekunden. Liegt die Spitze neben dem Mittel, entfällt der Eingriff. Kein DPR, kein Material, kein Bloom. Ein Ausreißer auf diesem Takt wäre der einzige Anlass, die Prüfung aus dem Frame zu nehmen.
+2. **Spitze nur lesen.** Die Lock-Prüfung läuft schon höchstens alle `LOCK_READ_SEC` (zwei Sekunden). Liegt die Spitze neben dem Mittel, entfällt der Eingriff. Kein DPR, kein Material, kein Bloom. Ein Ausreißer auf diesem Takt wäre der einzige Anlass, die Prüfung aus dem Frame zu nehmen.
 3. **Sprechrate bleibt die Stufe.** `stage.speechRate` ist die eine Rate. Keine zweite Uhr, keine Tonhöhe. `FIRST_PAUSE_MS` bleibt 320, solange niemand die eine Pause als falsch hört.
 4. **Dichte bleibt die Stufe.** `stage.filament` ist die eine Dichte. Der Check kennt schon 0.86–1. Keine zweite Dichte und kein Bloom.
 5. **Letzten Visem nicht über den Texttakt halten.** Erledigt. Gemessen offen an `da`: nach `durationMs` blieb `aa` stehen (sx 1,50, Kiefer 0,14), solange `onend` fehlte, auch 400 ms danach. `sampleSpeechMouth` gibt ab dem Texttakt dieselbe Ruhe wie im Leerlauf. Im letzten Abschnitt davor bleibt die Form, ohne Ausblenden. Die Schätzung darf kürzer sein als die Stimme. Keine Melodie.
