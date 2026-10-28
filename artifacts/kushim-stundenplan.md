@@ -40,8 +40,10 @@ Geprüft. Abkürzungen stehen dabei. Die Satzmelodie ist keiner dieser Schritte.
 
 Geprüft am Rohtext. Abkürzungen stehen dabei. Aussehen, Lock, Bildzeit, Mund und `FIRST_PAUSE_MS` gehören nicht dazu. Die Satzmelodie auch nicht.
 
-1. **Namen nicht erfragen.** `shapeReply` streicht eine Frage nach dem Namen nicht. Geschlossen wird daraus „Wie heißt du.“ Der Satz „Frage nicht nach dem Namen.“ bleibt deshalb im Systemtext, sonst gäbe es keinen Pfad. Nicht nachbauen, solange der Satz hält. Fällt er doch, nur in `shapeReply` streichen und den Satz in derselben Änderung löschen.
-2. **Reparatur ohne Vorgänger.** Ohne vorherige Zeile streicht `shapeReply` die Entschuldigung und kürzt. Kein Ersatzsatz in `fallback.ts`. Der leere Reparatur-Prompt in Stufe 6 bleibt leer.
-3. **Name an der Wortgrenze.** `mentionNameOnce` trifft heute auch eine Vorsilbe (`Jacin` in `Jacinta`). Nur diese Funktion ändern, und nur wenn ein Name so zerlegt wird. Kein zweiter Reiniger.
-4. **Abbruch bleibt an der Historie.** `trimInterrupted` schneidet den gesprochenen Satz. `shapeReply` formt die neue Zeile. Den Abbruch nicht in den Systemtext verlagern und nicht doppelt schneiden.
-5. **Nächste Regel, dieselbe Funktion.** Ein Aufruf in der Oberfläche, Rohtext davor, `shapeReply(shapeReply(x)) === shapeReply(x)`. Kein neues Modul und keine Formzeile in `stages.ts`.
+Erledigt: 2 und 3. Offen bleiben diese drei:
+
+1. **Namen nicht erfragen.** Offen. `shapeReply` streicht eine Frage nach dem Namen nicht. Geschlossen wird daraus „Wie heißt du.“ Der Satz „Frage nicht nach dem Namen.“ bleibt deshalb im Systemtext, sonst gäbe es keinen Pfad. Nicht nachbauen, solange der Satz hält. Fällt er doch, nur in `shapeReply` streichen und den Satz in derselben Änderung löschen.
+2. **Reparatur ohne Vorgänger.** Erledigt. Ohne vorherige Zeile streicht `shapeReply` die Entschuldigung und kürzt. Kein Ersatzsatz, auch nicht „Sag den Satz noch einmal.“ `fallback.ts` setzt bei der Reparatur keine eigene Zeile. Der leere Reparatur-Prompt in Stufe 6 bleibt leer.
+3. **Name an der Wortgrenze.** Erledigt. `mentionNameOnce` trifft den Namen nur als ganzes Wort. `Jacin` bleibt in `Jacinta` stehen. Kein zweiter Reiniger.
+4. **Abbruch bleibt an der Historie.** Offen. `trimInterrupted` schneidet den gesprochenen Satz. `shapeReply` formt die neue Zeile. Den Abbruch nicht in den Systemtext verlagern und nicht doppelt schneiden.
+5. **Nächste Regel, dieselbe Funktion.** Offen. Ein Aufruf in der Oberfläche, Rohtext davor, `shapeReply(shapeReply(x)) === shapeReply(x)`. Kein neues Modul und keine Formzeile in `stages.ts`.
