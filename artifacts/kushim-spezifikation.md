@@ -1,5 +1,5 @@
 # KUSHIM-SPEZIFIKATION
-Stand: Stufe 6 abgeschlossen, stabil. Nächste Stufe: 7 Gesprächsgesten.
+Stand: Stufe 8 abgeschlossen. Laufend Stufe 9 Sprache: Lippensynchron ist in der Szene, Satzmelodie und ein kürzerer erster Satz fehlen noch. Danach Stufe 10, nur der Lock-Check.
 Gesperrte Bildausgabe bleibt `kushim-aussehen-masterprompt.md`. Silhouette, Farben, Signal, Kamera nicht neu erfinden.
 
 ## Körper

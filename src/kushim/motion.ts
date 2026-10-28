@@ -1,6 +1,8 @@
 import type { Rig } from "@/kushim/anatomy";
+import { BLINK, GAZE_LERP, readGaze } from "@/kushim/lipsync";
 import { LOCK, type Gesture } from "@/kushim/lock";
 import { stageAt } from "@/kushim/stages";
+import { sampleSpeechMouth } from "@/kushim/speech";
 
 export type Pose = {
   gesture: Gesture;
@@ -126,4 +128,32 @@ export function tickKushim(rig: Rig, pose: Pose, dt: number, elapsed: number) {
   mat.opacity = opacity;
   const pulse = pose.reducedMotion ? 1 : 1 + Math.sin(elapsed * 3.4) * 0.08;
   rig.core.scale.setScalar(pulse * (pose.shoulderTopic && stage.shoulderListen ? 1.15 : 1));
+
+  const mouth = sampleSpeechMouth(elapsed, pose.reducedMotion);
+  const moving = pose.speaking && mouth.speaking;
+  rig.lips.scale.set(moving ? mouth.sx : 1, moving ? mouth.sy : 1, moving ? mouth.sz : 1);
+  const restJaw = typeof rig.jaw.userData.restX === "number" ? rig.jaw.userData.restX : 0;
+  const restJawY = typeof rig.jaw.userData.restY === "number" ? rig.jaw.userData.restY : rig.jaw.position.y;
+  rig.jaw.rotation.x = restJaw;
+  rig.jaw.position.y = restJawY - (moving ? mouth.jaw * 0.05 : 0);
+
+  const blink = (rig.head.userData.blink ?? { next: BLINK.minSec, until: -1 }) as { next: number; until: number };
+  rig.head.userData.blink = blink;
+  if (!pose.reducedMotion && elapsed >= blink.next && elapsed > blink.until) {
+    blink.until = elapsed + BLINK.closeSec;
+    blink.next = blink.until + BLINK.minSec + Math.random() * (BLINK.maxSec - BLINK.minSec);
+  }
+  const closed = !pose.reducedMotion && elapsed < blink.until;
+  rig.eyeMat.opacity = closed ? BLINK.eyeGain : 1;
+
+  const gazeLerp = 1 - Math.pow(1 - GAZE_LERP, Math.min(dt, 0.05) * 60);
+  const gaze = pose.reducedMotion ? { x: 0, y: 0 } : readGaze();
+  for (const eye of rig.eyes) {
+    const restX = typeof eye.userData.restX === "number" ? eye.userData.restX : eye.position.x;
+    const restY = typeof eye.userData.restY === "number" ? eye.userData.restY : eye.position.y;
+    const tx = restX + gaze.x * 0.006;
+    const ty = restY + gaze.y * 0.004;
+    eye.position.x += (tx - eye.position.x) * gazeLerp;
+    eye.position.y += (ty - eye.position.y) * gazeLerp;
+  }
 }

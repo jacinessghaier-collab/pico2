@@ -6,3 +6,4 @@
 - Research confirms shefixu-ai-girlfriend (R3F + three-vrm procedural useFrame + FFT lip-sync) and xiaokeai (transparent desktop pet + full local voice) as optimal bases; energy effects via custom ShaderMaterial/particle systems on bones + MeshPhysical transmission + bloom. [2026-10-27]
 - Additional high-value references: ektogamat holographic material (Fresnel + scanlines), talk2avatar (viseme-based lip-sync with Kokoro), lumi-3d-companion (gaze + click interactions), webwaifu3 (semantic memory). [2026-10-27]
 - Next optimizations: modular energy flow layer (bone-attached lines/particles driven by audio/activity), emotion-tagged gestures from LLM, improved viseme mapping, hourly delta application via Git patches or agent loop. [2026-10-27]
+- Lip-sync is on the procedural mouth (FFT for Leo, timed visemes otherwise). three-vrm-lip-sync skipped to keep the locked rig. Stand DONE 8 / NEXT 9. [2026-10-28]

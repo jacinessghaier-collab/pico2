@@ -10,12 +10,12 @@ Die laufende App schaltet dieselben Stufen schon über die Echtzeit seit dem ers
 
 ## Noch nicht gebaut
 
-- [ ] Name, den der Mensch nennt, höchstens einmal pro Antwort und nie erzwungen. (Erkennung liegt schon in `rememberName`.)
-- [ ] Wenn der Mensch Kushim unterbricht, bricht der Satz ab und die nächste Antwort beginnt beim neuen Thema. (Stop liegt in `stopSpeech`.)
-- [ ] Kurze Rückfrage nur, wenn der letzte Satz des Menschen wirklich offen ist.
-- [ ] Bei „nicht verstanden“ denselben Inhalt in einem Satz, ohne Entschuldigungsschleife.
-- [ ] Stabil: keine weiteren Codeänderungen, nur prüfen dass `lock.ts` unverändert ist.
+- [ ] Stabil: keine weiteren Codeänderungen, nur prüfen dass `lock.ts` unverändert ist. Der Vergleich liegt in `src/kushim/lock.test.ts`. Farben, Proportionen und Gestennamen sind in diesem Lauf gleich geblieben.
 
 ## Schon in der App
 
 Atem, Rückkanal beim Tippen, Einatmen vor dem Wort, Sätze mit Pause, Gedächtnis der letzten Züge, Schulter nur auf Ansprache, Reparatur, langsameres Gewicht, Leo-Stimme mit Browser-Ersatz, Gesten idle/listen/think/speak/explain/acknowledge/empathize.
+
+Name höchstens einmal und nie erzwungen. Unterbrechung bricht den gesprochenen Satz ab (`trimInterrupted`), die nächste Antwort gilt dem neuen Thema. Rückfrage nur bei offenem Satz. Bei „nicht verstanden“ derselbe Inhalt in einem Satz, ohne Entschuldigung. Lippen: Viseme aa/ih/ou/ee/oh, bei Leo aus den Frequenzbändern, sonst im Texttakt. Blick mit Lerp 0,10. Blinzeln beider Augen ohne Silbenkopplung.
+
+Bau: Stufe 8 von 10 erledigt, nächste Stufe ist Sprache (Satzmelodie). Stundenpipeline: Schritt 4 Lippensynchron steht, nächster Schritt ist das Gedächtnis über den Gesprächsausschnitt hinaus. Marker: `src/kushim/stand.ts`.

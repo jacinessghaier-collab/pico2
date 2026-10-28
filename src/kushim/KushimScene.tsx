@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { RefObject } from "react";
 import * as THREE from "three";
 import { createKushim } from "@/kushim/anatomy";
+import { setGaze } from "@/kushim/lipsync";
 import { LOCK } from "@/kushim/lock";
 import { tickKushim, type Pose } from "@/kushim/motion";
 
@@ -27,7 +28,7 @@ function Framing() {
 
 function Avatar({ poseRef }: { poseRef: RefObject<Pose> }) {
   const rig = useMemo(() => createKushim(), []);
-  const { scene } = useThree();
+  const { scene, pointer } = useThree();
   const elapsed = useRef(0);
 
   useEffect(() => {
@@ -41,6 +42,7 @@ function Avatar({ poseRef }: { poseRef: RefObject<Pose> }) {
   useFrame((_, delta) => {
     const dt = Math.min(delta, 0.05);
     elapsed.current += dt;
+    setGaze(pointer.x, pointer.y);
     const pose = poseRef.current;
     if (!pose) return;
     tickKushim(rig, pose, dt, elapsed.current);

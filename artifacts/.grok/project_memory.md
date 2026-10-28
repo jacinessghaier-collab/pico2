@@ -12,3 +12,4 @@
 - Shortcuts confirmed: three-vrm-lip-sync for visemes; ektogamat HolographicMaterial or MeshPhysical for body; shefixu useFrame for gestures. [2026-10-27]
 - Build successful (routes chunk ~1 MB gzip 276 kB). HolographicMaterialApplier.ts delivered for MeshPhysical transmission body. [2026-10-27]
 - Step 3 Gesture integration delivered: KushimIntegratedScene.tsx wires EnergyFlow + GestureLayer + holographic body; red pulse gated at activity > 0.55 or emphasis. [2026-10-27]
+- Live scene is the procedural rig, not VRM. Lip-sync (aa/ih/ou/ee/oh), gaze lerp 0.10 and blink landed on that mouth. GestureLayer stays a reference. emphasis maps to explain. Red shoulder stays topic-gated. Dialogue policy: name once, interrupt, clarifying question only when open, repair without apology. lock.ts unchanged. Stand DONE 8 / NEXT 9, hourly DONE 4 / NEXT 5. [2026-10-28]
