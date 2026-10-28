@@ -22,11 +22,11 @@ function Framing() {
     cam.fov = fov;
     const aspect = size.width / Math.max(1, size.height);
     const vertical = (fov * Math.PI) / 180;
-    const distV = (1.12 / Math.tan(vertical / 2)) * 1.08;
+    const distV = (1.18 / Math.tan(vertical / 2)) * 1.08;
     const horizontal = 2 * Math.atan(Math.tan(vertical / 2) * aspect);
-    const distH = (0.72 / Math.tan(horizontal / 2)) * 1.18;
-    const center = 0.92;
-    cam.position.set(0, center + 0.08, Math.max(distV, distH));
+    const distH = (0.7 / Math.tan(horizontal / 2)) * 1.16;
+    const center = 0.82;
+    cam.position.set(0, center + 0.02, Math.max(distV, distH));
     cam.lookAt(0, center, 0);
     cam.updateProjectionMatrix();
   }, [camera, size]);

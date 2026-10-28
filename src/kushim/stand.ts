@@ -22,7 +22,7 @@ export const STEPS: Step[] = [
   {
     id: 1,
     title: "Proportionen und Silhouette",
-    detail: "Erwachsener Mensch, acht Kopflängen. Form liegt in lock.ts.",
+    detail: "Erwachsener Mensch, etwa 7,5 bis 8 Kopflängen. Arme ein Stück vom Rumpf. Form liegt in lock.ts.",
   },
   {
     id: 2,
@@ -32,7 +32,7 @@ export const STEPS: Step[] = [
   {
     id: 3,
     title: "Durchsichtiges Material",
-    detail: "Glas aus Licht, Fresnel, keine milchige Hülle und keine zweite Haut.",
+    detail: "Glas als Hülle mit cyanem Rand. Der Leib bleibt durchsichtig, kein milchiger Körper.",
   },
   {
     id: 4,
@@ -42,7 +42,7 @@ export const STEPS: Step[] = [
   {
     id: 5,
     title: "Aura",
-    detail: "Die Fresnel-Hülle ist die Aura. Keine zweite Schale über der Silhouette.",
+    detail: "Weiche Aura aus dem Randlicht und feinen Punkten. Bodenlicht unter den Füßen. Keine zweite Schale.",
   },
   {
     id: 6,
@@ -176,6 +176,14 @@ export const CHANGES: Change[] = [
     title: "Visem am Texttakt",
     body: "Nach der geschätzten Dauer liegt der Mund in derselben Ruhe wie im Leerlauf, auch wenn onend später kommt. Gemessen an da: die letzte Form aa blieb sonst offen. Kein Ausblenden, keine zweite Uhr. Die Schätzung darf kürzer sein als die Stimme. FIRST_PAUSE_MS bleibt 320.",
     source: "Stundenplan",
+  },
+  {
+    id: "glas-ziel",
+    time: "28.10.",
+    step: 1,
+    title: "Glas und Grün",
+    body: "Die Hülle ist durchsichtiges Glas mit cyanem Rand. Brustkern und senkrechter Strahl sind gelbgrün, unter den Füßen liegt weiches Bodenlicht. Die Filamentfarbe folgt dem Zielbild. Dichte, Kopfdetail und die rote Schulter bleiben.",
+    source: "Zielbild",
   },
 ];
 

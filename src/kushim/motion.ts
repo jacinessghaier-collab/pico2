@@ -19,12 +19,12 @@ type Axis = { x: number; y: number; z: number };
 
 function poseTargets(gesture: Gesture): Record<string, Axis> {
   const idle: Record<string, Axis> = {
-    shoulderL: { x: 0.02, y: 0.02, z: 0.1 },
-    elbowL: { x: -0.16, y: 0.02, z: 0 },
-    wristL: { x: -0.25, y: 0, z: 0.5 },
-    shoulderR: { x: 0.02, y: -0.02, z: -0.1 },
-    elbowR: { x: -0.16, y: -0.02, z: 0 },
-    wristR: { x: -0.25, y: 0, z: -0.5 },
+    shoulderL: { x: 0.05, y: 0.03, z: 0.3 },
+    elbowL: { x: -0.2, y: 0.02, z: 0.02 },
+    wristL: { x: -0.12, y: 0, z: 0.32 },
+    shoulderR: { x: 0.05, y: -0.03, z: -0.3 },
+    elbowR: { x: -0.2, y: -0.02, z: -0.02 },
+    wristR: { x: -0.12, y: 0, z: -0.32 },
     head: { x: 0, y: 0, z: 0 },
   };
   if (gesture === "explain") {
@@ -115,7 +115,7 @@ export function tickKushim(rig: Rig, pose: Pose, dt: number, elapsed: number) {
   rig.chest.scale.set(chest.x, chest.y, chest.z);
   rig.chest.position.y = LOCK.proportions.chestY + breath * LOCK_CANON.breathLift;
 
-  const curlBase = pose.gesture === "think" ? 0.45 : pose.gesture === "explain" ? 0.05 : 0.18;
+  const curlBase = pose.gesture === "think" ? 0.45 : pose.gesture === "explain" ? 0.05 : 0.08;
   const life = !pose.reducedMotion && stage.fingerLife ? 0.05 : 0;
   rig.fingersL.forEach((finger, index) => {
     const wave = Math.sin(elapsed * 0.8 + index) * life;
@@ -128,6 +128,22 @@ export function tickKushim(rig: Rig, pose: Pose, dt: number, elapsed: number) {
 
   rig.nerve.uniforms.uTime.value = elapsed;
   rig.signal.uniforms.uTime.value = elapsed;
+  rig.glass.uniforms.uTime.value = pose.reducedMotion ? 0 : elapsed;
+  const auraBase = rig.aura.userData.base as Float32Array | undefined;
+  const auraPhase = rig.aura.userData.phase as Float32Array | undefined;
+  if (auraBase && auraPhase) {
+    const auraAttr = rig.aura.geometry.getAttribute("position");
+    const auraArray = auraAttr.array as Float32Array;
+    const amp = pose.reducedMotion ? 0 : 0.012;
+    for (let i = 0; i < auraPhase.length; i++) {
+      const swing = Math.sin(elapsed * 0.4 + auraPhase[i]);
+      const lift = Math.cos(elapsed * 0.27 + auraPhase[i]);
+      auraArray[i * 3] = auraBase[i * 3] + swing * amp;
+      auraArray[i * 3 + 1] = auraBase[i * 3 + 1] + lift * amp;
+      auraArray[i * 3 + 2] = auraBase[i * 3 + 2] + swing * amp * 0.5;
+    }
+    auraAttr.needsUpdate = true;
+  }
   rig.nerve.uniforms.uDensity.value = stage.filament;
   rig.signal.uniforms.uDensity.value = 1;
 

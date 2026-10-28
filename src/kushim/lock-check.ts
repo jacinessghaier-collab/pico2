@@ -4,6 +4,7 @@
  * jaw drop, gaze, blink) is the envelope from tickKushim and lipsync —
  * update those constants in the same change.
  * Silhouette, palette, the single red site, void, and the straight-on camera stay put.
+ * saft is the Zielbild yellow-green (beam, filament tint, ground). Strom stays the cyan rim.
  * The re-read also rejects a swapped shader or geometry, a reparented or hidden
  * part, a yawed or upside-down camera, and a scene that covers the void.
  * The live scene re-reads on LOCK_READ_SEC. There is no second checker and no post-pass.
@@ -25,9 +26,11 @@ export class LockBreach extends Error {
 
 /** Independent copy of the locked look. lock.ts must match; the test repeats the palette. */
 export const LOCK_CANON = {
-  void: "#02060A",
+  void: "#000000",
   strom: "#3AD7FF",
   kern: "#E7FBFF",
+  saft: "#B6E24A",
+  saftKern: "#E4F98A",
   signal: "#FF3B4E",
   signalNerveCore: "#FFD0D4",
   signalCore: "#FFD5D8",
@@ -37,19 +40,24 @@ export const LOCK_CANON = {
     chestY: 1.22,
     shoulderX: 0.2,
     shoulderLocalY: 0.28,
-    upperArm: 0.4,
-    foreArm: 0.31,
-    thigh: 0.46,
-    shin: 0.4,
-    headRadius: 0.105,
+    upperArm: 0.44,
+    foreArm: 0.35,
+    thigh: 0.5,
+    shin: 0.44,
+    headRadius: 0.1,
     headLocalY: 0.44,
   },
   hipX: 0.11,
   torsoScale: [1.05, 1, 0.72],
   skullScale: [1, 1.16, 1.02],
-  glassBoost: 1,
-  brightBoost: 1.8,
+  glassBoost: 0.85,
+  brightBoost: 0.78,
   coreBoost: 2.4,
+  auraPoints: 140,
+  auraSize: 0.016,
+  auraOpacity: 0.4,
+  auraRadius: 0.72,
+  groundY: -0.02,
   nerveSpeed: 0.34,
   signalSpeed: 0.2,
   ringSize: 0.028,
@@ -90,7 +98,15 @@ function freezeCanon(value: object) {
 freezeCanon(LOCK_CANON);
 
 export type MaterialRole =
-  "glass" | "glass-bright" | "nerve" | "signal" | "core" | "sprite" | "ring";
+  | "glass"
+  | "glass-bright"
+  | "nerve"
+  | "signal"
+  | "core"
+  | "sprite"
+  | "ring"
+  | "aura"
+  | "ground";
 
 export type LockedRig = {
   root: THREE.Object3D;
@@ -243,10 +259,10 @@ export function assertLockTable() {
     breach("Die Vergleichstabelle ist nicht eingefroren.", "The comparison table is not frozen.");
   }
   const top = Object.keys(LOCK).sort().join(",");
-  if (top !== "kern,proportions,signal,strom,void") {
+  if (top !== "kern,proportions,saft,saftKern,signal,strom,void") {
     breach("LOCK hat andere Schlüssel.", "LOCK has different keys.");
   }
-  const colors = ["void", "strom", "kern", "signal"] as const;
+  const colors = ["void", "strom", "kern", "saft", "saftKern", "signal"] as const;
   for (const key of colors) {
     if (LOCK[key].toUpperCase() !== LOCK_CANON[key]) {
       breach(
@@ -619,6 +635,8 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
   mustClose(glassBoost, LOCK_CANON.glassBoost, "Glas-Boost", "Glass boost");
   mustHex(colorSlot(rig.glass, "uColor"), LOCK_CANON.strom, "Glasfarbe Strom", "Glass strom color");
   mustHex(colorSlot(rig.glass, "uCore"), LOCK_CANON.kern, "Glasfarbe Kern", "Glass core color");
+  mustHex(colorSlot(rig.glass, "uSaft"), LOCK_CANON.saft, "Glasfarbe Saft", "Glass saft color");
+  numberSlot(rig.glass, "uTime", false);
   expectGlassLook(rig.glass, "Glas", "Glass", THREE.DoubleSide);
 
   const brightMats: THREE.ShaderMaterial[] = [];
@@ -637,15 +655,17 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
   );
   mustHex(colorSlot(bright, "uColor"), LOCK_CANON.strom, "Glanzfarbe Strom", "Bright strom color");
   mustHex(colorSlot(bright, "uCore"), LOCK_CANON.kern, "Glanzfarbe Kern", "Bright core color");
+  mustHex(colorSlot(bright, "uSaft"), LOCK_CANON.saft, "Glanzfarbe Saft", "Bright saft color");
+  numberSlot(bright, "uTime", false);
   expectGlassLook(bright, "Glanz", "Bright glass", THREE.DoubleSide);
 
   mustHex(
     colorSlot(rig.nerve, "uColor"),
-    LOCK_CANON.strom,
-    "Nervenfarbe Strom",
-    "Nerve strom color",
+    LOCK_CANON.saft,
+    "Nervenfarbe Saft",
+    "Nerve saft color",
   );
-  mustHex(colorSlot(rig.nerve, "uCore"), LOCK_CANON.kern, "Nervenfarbe Kern", "Nerve core color");
+  mustHex(colorSlot(rig.nerve, "uCore"), LOCK_CANON.saftKern, "Nervenglanz", "Nerve highlight");
   mustClose(
     numberSlot(rig.nerve, "uSpeed", true),
     LOCK_CANON.nerveSpeed,
@@ -743,10 +763,10 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
         breach("Lichtpunkt-Innenfarbe driftet.", "Light-point inner color drifted.");
       }
       const outer = tint.outer.toUpperCase();
-      if (outer !== LOCK_CANON.strom && outer !== LOCK_CANON.kern) {
+      if (outer !== LOCK_CANON.strom && outer !== LOCK_CANON.kern && outer !== LOCK_CANON.saft) {
         breach(
-          `Lichtpunkt trägt ${outer} statt Strom oder Kern.`,
-          `Light point uses ${outer} instead of strom or kern.`,
+          `Lichtpunkt trägt ${outer} statt Strom, Kern oder Saft.`,
+          `Light point uses ${outer} instead of strom, kern, or saft.`,
         );
       }
     }
@@ -904,6 +924,63 @@ function auditBaseline(rig: LockedRig) {
 /** Seconds between live re-reads. The scene and the stability hour share this gate. */
 export const LOCK_READ_SEC = 2;
 
+function auditHalo(rig: LockedRig) {
+  const found = { aura: [] as THREE.Object3D[], boden: [] as THREE.Object3D[] };
+  rig.root.traverse((obj) => {
+    const key = markData(obj).lockKey;
+    if (key === "aura" || key === "boden") found[key].push(obj);
+  });
+  if (found.aura.length !== 1 || found.boden.length !== 1) {
+    breach("Aura oder Bodenlicht fehlt.", "Aura or ground light is missing.");
+  }
+  const aura = found.aura[0] as THREE.Points;
+  const boden = found.boden[0] as THREE.Mesh;
+  if (aura.parent !== rig.root || boden.parent !== rig.root) {
+    breach("Aura oder Bodenlicht hängt nicht am Körper.", "Aura or ground light left the body.");
+  }
+  const auraMat = aura.material as THREE.PointsMaterial;
+  if (!auraMat || Array.isArray(auraMat) || roles.get(auraMat) !== "aura") {
+    breach("Aura-Rolle fehlt.", "Aura role is missing.");
+  }
+  mustHex(auraMat.color, LOCK_CANON.spriteInner, "Aura-Tönung", "Aura tint");
+  mustClose(auraMat.size, LOCK_CANON.auraSize, "Aura-Größe", "Aura size");
+  mustClose(auraMat.opacity, LOCK_CANON.auraOpacity, "Aura-Deckkraft", "Aura opacity");
+  if (
+    !auraMat.transparent ||
+    auraMat.depthWrite ||
+    auraMat.blending !== THREE.AdditiveBlending ||
+    auraMat.premultipliedAlpha ||
+    !auraMat.sizeAttenuation ||
+    !auraMat.vertexColors
+  ) {
+    breach("Die Aura hat ihre Punkte verloren.", "The aura lost its points.");
+  }
+  const attr = aura.geometry?.getAttribute("position");
+  if (!attr || attr.count !== LOCK_CANON.auraPoints) {
+    breach("Die Aura hat nicht mehr ihre Punkte.", "The aura no longer has its points.");
+  }
+  const array = attr.array as ArrayLike<number>;
+  for (let i = 0; i < attr.count; i++) {
+    const x = finite(array[i * 3], "Aura ungültig.", "Aura is invalid.");
+    const y = finite(array[i * 3 + 1], "Aura ungültig.", "Aura is invalid.");
+    const z = finite(array[i * 3 + 2], "Aura ungültig.", "Aura is invalid.");
+    if (y < -0.15 || y > 1.95 || Math.hypot(x, z) > LOCK_CANON.auraRadius) {
+      breach("Die Aura verlässt die Silhouette.", "The aura leaves the silhouette.");
+    }
+  }
+  const groundMat = boden.material as THREE.ShaderMaterial;
+  if (!groundMat || Array.isArray(groundMat) || roles.get(groundMat) !== "ground") {
+    breach("Bodenrolle fehlt.", "Ground role is missing.");
+  }
+  mustHex(colorSlot(groundMat, "uColor"), LOCK_CANON.strom, "Bodenfarbe Strom", "Ground strom color");
+  mustHex(colorSlot(groundMat, "uSaft"), LOCK_CANON.saft, "Bodenfarbe Saft", "Ground saft color");
+  expectGlassLook(groundMat, "Boden", "Ground");
+  mustClose(boden.position.y, LOCK_CANON.groundY, "Bodenhöhe", "Ground height");
+  mustClose(boden.position.x, 0, "Boden seitlich", "Ground lateral");
+  mustClose(boden.position.z, 0, "Bodentiefe", "Ground depth");
+  mustClose(boden.rotation.x, -Math.PI / 2, "Bodenlage", "Ground tilt");
+}
+
 export function assertRigLock(
   rig: LockedRig,
   phase: Phase = "live",
@@ -925,6 +1002,7 @@ export function assertRigLock(
   auditChain(rig);
   auditSkeleton(rig, phase);
   auditMaterials(rig, phase);
+  auditHalo(rig);
   if (scene) auditSceneSeat(rig, scene);
   if (phase === "live") auditBaseline(rig);
 }

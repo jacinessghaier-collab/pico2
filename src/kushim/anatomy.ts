@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { LOCK } from "@/kushim/lock";
 import {
+  LOCK_CANON,
   assertRigLock,
   markMaterial,
   markTint,
@@ -32,6 +33,7 @@ export type Rig = {
   ringAngles: Float32Array;
   ringJitter: Float32Array;
   core: THREE.Mesh;
+  aura: THREE.Points;
   dispose: () => void;
 };
 
@@ -49,6 +51,32 @@ void main() {
 const glassFrag = /* glsl */ `
 uniform vec3 uColor;
 uniform vec3 uCore;
+uniform vec3 uSaft;
+uniform float uBoost;
+uniform float uTime;
+varying vec3 vN;
+varying vec3 vW;
+void main() {
+  vec3 viewDir = normalize(cameraPosition - vW);
+  float ndv = abs(dot(normalize(vN), viewDir));
+  float fres = pow(1.0 - ndv, 4.0);
+  float spine = exp(-abs(vW.x) * 32.0) * smoothstep(1.02, 1.16, vW.y) * smoothstep(1.5, 1.32, vW.y);
+  vec3 heart = vW - vec3(0.0, 1.38, 0.09);
+  float star = exp(-dot(heart, heart) * 40.0);
+  float pulse = 0.9 + 0.1 * sin(uTime * 1.5);
+  float alpha = fres * 0.62 * uBoost + 0.012 * uBoost + spine * 0.14 + star * 0.07 * pulse;
+  if (alpha < 0.02) discard;
+  vec3 rimColor = mix(uColor, uCore, fres * 0.2);
+  vec3 beam = mix(uSaft, uCore, star * 0.35);
+  vec3 col = mix(rimColor, beam, clamp(spine * 1.2 + star, 0.0, 1.0));
+  gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.72));
+}
+`;
+
+/** Shoulder hotspot keeps the previous fresnel. Pico does not retune that red. */
+const signalFrag = /* glsl */ `
+uniform vec3 uColor;
+uniform vec3 uCore;
 uniform float uBoost;
 varying vec3 vN;
 varying vec3 vW;
@@ -61,6 +89,30 @@ void main() {
   float alpha = fres * 0.95 * uBoost + 0.07 * uBoost + spine * 0.55 + star * 0.7;
   if (alpha < 0.015) discard;
   gl_FragColor = vec4(mix(uColor, uCore, fres), alpha);
+}
+`;
+
+const groundVert = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+const groundFrag = /* glsl */ `
+uniform vec3 uColor;
+uniform vec3 uSaft;
+varying vec2 vUv;
+void main() {
+  vec2 p = (vUv - 0.5) * vec2(1.15, 1.35);
+  float r = length(p);
+  float pool = smoothstep(0.55, 0.0, r);
+  float hot = exp(-r * r * 14.0);
+  vec3 col = mix(uColor, uSaft, 0.7);
+  float alpha = pool * 0.16 + hot * 0.38;
+  if (alpha < 0.01) discard;
+  gl_FragColor = vec4(col, alpha);
 }
 `;
 
@@ -92,6 +144,8 @@ uniform vec3 uColor;
 uniform vec3 uCore;
 uniform float uTime;
 uniform float uSpeed;
+uniform float uAlpha;
+uniform float uHead;
 varying float vAlong;
 varying float vRank;
 varying float vVisible;
@@ -99,7 +153,7 @@ void main() {
   if (vVisible < 0.5) discard;
   float wave = fract(vAlong * 2.4 - uTime * uSpeed);
   float head = smoothstep(0.0, 0.02, wave) * smoothstep(0.2, 0.03, wave);
-  float alpha = 0.55 + head * 1.0;
+  float alpha = uAlpha + head * uHead;
   gl_FragColor = vec4(mix(uColor, uCore, head), alpha);
 }
 `;
@@ -176,17 +230,20 @@ function glassMaterial(boost: number, role: "glass" | "glass-bright") {
     uniforms: {
       uColor: { value: new THREE.Color(LOCK.strom) },
       uCore: { value: new THREE.Color(LOCK.kern) },
+      uSaft: { value: new THREE.Color(LOCK.saft) },
       uBoost: { value: boost },
+      uTime: { value: 0 },
     },
     vertexShader: glassVert,
     fragmentShader: glassFrag,
   });
-  sealShaderChannels(material, ["uColor", "uCore", "uBoost"]);
+  sealShaderChannels(material, ["uColor", "uCore", "uSaft", "uBoost"]);
   markMaterial(material, role);
   return material;
 }
 
 function nerveMaterial(color: string, speed: number) {
+  const signal = color === LOCK.signal;
   const material = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -194,15 +251,18 @@ function nerveMaterial(color: string, speed: number) {
     side: THREE.DoubleSide,
     uniforms: {
       uColor: { value: new THREE.Color(color) },
-      uCore: { value: new THREE.Color(color === LOCK.signal ? "#ffd0d4" : LOCK.kern) },
+      uCore: { value: new THREE.Color(signal ? "#ffd0d4" : LOCK.saftKern) },
       uTime: { value: 0 },
       uSpeed: { value: speed },
       uDensity: { value: 1 },
+      // Body current stays readable on black. The red shoulder keeps its old gain.
+      uAlpha: { value: signal ? 0.55 : 0.22 },
+      uHead: { value: signal ? 1 : 0.28 },
     },
     vertexShader: nerveVert,
     fragmentShader: nerveFrag,
   });
-  sealShaderChannels(material, ["uColor", "uCore", "uSpeed"]);
+  sealShaderChannels(material, ["uColor", "uCore", "uSpeed", "uAlpha", "uHead"]);
   markMaterial(material, color === LOCK.signal ? "signal" : "nerve");
   return material;
 }
@@ -217,7 +277,7 @@ function solid(parent: THREE.Object3D, geo: THREE.BufferGeometry, material: THRE
 
 function capsule(radius: number, length: number) {
   const cyl = Math.max(0.012, length - radius * 2);
-  return new THREE.CapsuleGeometry(radius, cyl, 4, 8);
+  return new THREE.CapsuleGeometry(radius, cyl, 8, 16);
 }
 
 function glowSprite(inner: string, outer: string, spikes: number) {
@@ -292,9 +352,9 @@ function addFingers(wrist: THREE.Group, side: 1 | -1, material: THREE.Material) 
 export function createKushim(): Rig {
   const P = LOCK.proportions;
   const root = new THREE.Group();
-  const glass = glassMaterial(1, "glass");
-  const bright = glassMaterial(1.8, "glass-bright");
-  const nerve = nerveMaterial(LOCK.strom, 0.34);
+  const glass = glassMaterial(LOCK_CANON.glassBoost, "glass");
+  const bright = glassMaterial(LOCK_CANON.brightBoost, "glass-bright");
+  const nerve = nerveMaterial(LOCK.saft, 0.34);
   const signal = nerveMaterial(LOCK.signal, 0.2);
   const disposables: Array<THREE.BufferGeometry | THREE.Material | THREE.Texture> = [
     glass,
@@ -349,7 +409,7 @@ export function createKushim(): Rig {
     brow.rotation.y = side * -0.3;
   }
 
-  const starTex = glowSprite("#ffffff", LOCK.strom, 10);
+  const starTex = glowSprite("#ffffff", LOCK.saft, 0);
   const starMat = new THREE.SpriteMaterial({
     map: starTex,
     blending: THREE.AdditiveBlending,
@@ -359,8 +419,8 @@ export function createKushim(): Rig {
   sealLookColor(starMat.color);
   markMaterial(starMat, "sprite");
   const star = new THREE.Sprite(starMat);
-  star.position.set(0, 0.14, 0.1);
-  star.scale.set(0.36, 0.36, 1);
+  star.position.set(0, 0.12, 0.1);
+  star.scale.set(0.055, 0.08, 1);
   star.renderOrder = 3;
   chest.add(star);
   disposables.push(starTex, star.material);
@@ -456,7 +516,7 @@ export function createKushim(): Rig {
     const shoulder = new THREE.Group();
     shoulder.position.set(side * P.shoulderX, P.shoulderLocalY, 0);
     chest.add(shoulder);
-    const joint = solid(shoulder, new THREE.SphereGeometry(0.048, 14, 10), bright);
+    const joint = solid(shoulder, new THREE.SphereGeometry(0.048, 16, 12), glass);
     joint.scale.set(1.05, 1, 0.9);
     const upperMesh = solid(shoulder, capsule(0.046, P.upperArm), glass);
     upperMesh.position.y = -P.upperArm / 2;
@@ -471,7 +531,7 @@ export function createKushim(): Rig {
     const elbow = new THREE.Group();
     elbow.position.y = -P.upperArm;
     shoulder.add(elbow);
-    solid(elbow, new THREE.SphereGeometry(0.032, 12, 8), bright);
+    solid(elbow, new THREE.SphereGeometry(0.032, 14, 10), glass);
     const foreMesh = solid(elbow, capsule(0.036, P.foreArm), glass);
     foreMesh.position.y = -P.foreArm / 2;
     const foreN = emptyRibbon();
@@ -484,7 +544,7 @@ export function createKushim(): Rig {
     const wrist = new THREE.Group();
     wrist.position.y = -P.foreArm;
     elbow.add(wrist);
-    solid(wrist, new THREE.SphereGeometry(0.022, 10, 8), bright);
+    solid(wrist, new THREE.SphereGeometry(0.022, 12, 8), glass);
     const palm = solid(wrist, new THREE.SphereGeometry(0.034, 12, 8), glass);
     palm.position.set(0, -0.03, 0.01);
     palm.scale.set(0.85, 1.15, 0.42);
@@ -534,7 +594,7 @@ export function createKushim(): Rig {
       uBoost: { value: 2.4 },
     },
     vertexShader: glassVert,
-    fragmentShader: glassFrag,
+    fragmentShader: signalFrag,
   });
   sealShaderChannels(coreMat, ["uColor", "uCore", "uBoost"]);
   markMaterial(coreMat, "core");
@@ -577,7 +637,7 @@ export function createKushim(): Rig {
     hip.userData.lockSide = side;
     hip.position.set(side * 0.11, P.hipY, 0);
     root.add(hip);
-    solid(hip, new THREE.SphereGeometry(0.055, 14, 10), bright);
+    solid(hip, new THREE.SphereGeometry(0.055, 16, 12), glass);
     const thighMesh = solid(hip, capsule(0.068, P.thigh), glass);
     thighMesh.position.y = -P.thigh / 2;
     const hipN = emptyRibbon();
@@ -603,7 +663,7 @@ export function createKushim(): Rig {
     knee.userData.lockKey = "knee";
     knee.position.y = -P.thigh;
     hip.add(knee);
-    const cap = solid(knee, new THREE.SphereGeometry(0.04, 12, 8), bright);
+    const cap = solid(knee, new THREE.SphereGeometry(0.04, 14, 10), glass);
     cap.position.z = 0.02;
     const shinMesh = solid(knee, capsule(0.046, P.shin), glass);
     shinMesh.position.y = -P.shin / 2;
@@ -618,7 +678,7 @@ export function createKushim(): Rig {
     ankle.userData.lockKey = "ankle";
     ankle.position.y = -P.shin;
     knee.add(ankle);
-    solid(ankle, new THREE.SphereGeometry(0.026, 10, 8), bright);
+    solid(ankle, new THREE.SphereGeometry(0.026, 12, 8), glass);
     const foot = new THREE.Group();
     ankle.add(foot);
     const footMesh = solid(foot, capsule(0.028, 0.16), glass);
@@ -653,6 +713,77 @@ export function createKushim(): Rig {
   addRibbon(pelvis, ringPts, 0.12, 0.0036);
   commitRibbon(root, pelvis, nerve);
 
+  const auraCount = LOCK_CANON.auraPoints;
+  const auraPos = new Float32Array(auraCount * 3);
+  const auraCol = new Float32Array(auraCount * 3);
+  const auraPhase = new Float32Array(auraCount);
+  const stromCol = new THREE.Color(LOCK.strom);
+  const saftCol = new THREE.Color(LOCK.saft);
+  const mixCol = new THREE.Color();
+  const unit = (n: number) => {
+    const x = Math.sin(n * 127.1) * 43758.5453;
+    return x - Math.floor(x);
+  };
+  for (let i = 0; i < auraCount; i++) {
+    const y = 0.06 + unit(i + 1) * 1.66;
+    const ang = unit(i + 19) * Math.PI * 2;
+    const girth = 0.16 + 0.14 * Math.sin(Math.min(1, y / 1.65) * Math.PI);
+    const radius = girth + 0.1 + unit(i + 41) * 0.1;
+    auraPos[i * 3] = Math.cos(ang) * radius;
+    auraPos[i * 3 + 1] = y;
+    auraPos[i * 3 + 2] = Math.sin(ang) * radius * 0.62;
+    auraPhase[i] = unit(i + 19) * Math.PI * 2;
+    mixCol.copy(stromCol).lerp(saftCol, Math.min(1, (1.55 - y) / 1.55) * 0.8);
+    auraCol[i * 3] = mixCol.r;
+    auraCol[i * 3 + 1] = mixCol.g;
+    auraCol[i * 3 + 2] = mixCol.b;
+  }
+  const auraGeo = new THREE.BufferGeometry();
+  auraGeo.setAttribute("position", new THREE.BufferAttribute(auraPos, 3));
+  auraGeo.setAttribute("color", new THREE.BufferAttribute(auraCol, 3));
+  const auraMat = new THREE.PointsMaterial({
+    color: "#ffffff",
+    size: LOCK_CANON.auraSize,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    opacity: LOCK_CANON.auraOpacity,
+    sizeAttenuation: true,
+    vertexColors: true,
+  });
+  sealLookColor(auraMat.color);
+  markMaterial(auraMat, "aura");
+  const aura = new THREE.Points(auraGeo, auraMat);
+  aura.userData.lockKey = "aura";
+  aura.userData.base = auraPos.slice();
+  aura.userData.phase = auraPhase;
+  aura.frustumCulled = false;
+  aura.renderOrder = 3;
+  root.add(aura);
+  disposables.push(auraGeo, auraMat);
+
+  const groundMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    uniforms: {
+      uColor: { value: new THREE.Color(LOCK.strom) },
+      uSaft: { value: new THREE.Color(LOCK.saft) },
+    },
+    vertexShader: groundVert,
+    fragmentShader: groundFrag,
+  });
+  sealShaderChannels(groundMat, ["uColor", "uSaft"]);
+  markMaterial(groundMat, "ground");
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.2), groundMat);
+  ground.userData.lockKey = "boden";
+  ground.position.y = LOCK_CANON.groundY;
+  ground.rotation.x = -Math.PI / 2;
+  ground.frustumCulled = false;
+  ground.renderOrder = 0;
+  root.add(ground);
+  disposables.push(groundMat);
+
   root.traverse((obj: THREE.Object3D) => {
     const mesh = obj as THREE.Mesh;
     if (mesh.geometry) disposables.push(mesh.geometry);
@@ -681,6 +812,7 @@ export function createKushim(): Rig {
     ringAngles,
     ringJitter,
     core,
+    aura,
     dispose: () => {
       const seen = new Set<THREE.BufferGeometry | THREE.Material | THREE.Texture>();
       for (const item of disposables) {

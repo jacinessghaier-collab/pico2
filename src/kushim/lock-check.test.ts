@@ -67,13 +67,17 @@ function frame(aspect: number) {
 
 describe("appearance lock table", () => {
   it("matches the masterprompt palette and proportions", () => {
-    assert.equal(LOCK.void, "#02060A");
+    assert.equal(LOCK.void, "#000000");
     assert.equal(LOCK.strom, "#3AD7FF");
     assert.equal(LOCK.kern, "#E7FBFF");
+    assert.equal(LOCK.saft, "#B6E24A");
+    assert.equal(LOCK.saftKern, "#E4F98A");
     assert.equal(LOCK.signal, "#FF3B4E");
-    assert.equal(LOCK_CANON.void, "#02060A");
+    assert.equal(LOCK_CANON.void, "#000000");
     assert.equal(LOCK_CANON.strom, "#3AD7FF");
     assert.equal(LOCK_CANON.kern, "#E7FBFF");
+    assert.equal(LOCK_CANON.saft, "#B6E24A");
+    assert.equal(LOCK_CANON.saftKern, "#E4F98A");
     assert.equal(LOCK_CANON.signal, "#FF3B4E");
     assert.equal(LOCK_CANON.filamentMin, 0.86);
     assert.equal(LOCK_CANON.filamentMax, 1);
@@ -84,11 +88,11 @@ describe("appearance lock table", () => {
     assert.equal(LOCK.proportions.chestY, 1.22);
     assert.equal(LOCK.proportions.shoulderX, 0.2);
     assert.equal(LOCK.proportions.shoulderLocalY, 0.28);
-    assert.equal(LOCK.proportions.upperArm, 0.4);
-    assert.equal(LOCK.proportions.foreArm, 0.31);
-    assert.equal(LOCK.proportions.thigh, 0.46);
-    assert.equal(LOCK.proportions.shin, 0.4);
-    assert.equal(LOCK.proportions.headRadius, 0.105);
+    assert.equal(LOCK.proportions.upperArm, 0.44);
+    assert.equal(LOCK.proportions.foreArm, 0.35);
+    assert.equal(LOCK.proportions.thigh, 0.5);
+    assert.equal(LOCK.proportions.shin, 0.44);
+    assert.equal(LOCK.proportions.headRadius, 0.1);
     assert.equal(LOCK.proportions.headLocalY, 0.44);
   });
 
@@ -100,7 +104,7 @@ describe("appearance lock table", () => {
       (LOCK.proportions as { headRadius: number }).headRadius = 1;
     }, TypeError);
     assert.equal(LOCK.strom, "#3AD7FF");
-    assert.equal(LOCK.proportions.headRadius, 0.105);
+    assert.equal(LOCK.proportions.headRadius, 0.1);
   });
 
   it("keeps the comparison table frozen", () => {
@@ -391,7 +395,7 @@ describe("camera and void", () => {
   });
 
   it("requires the opaque void and no tone mapping", () => {
-    const color = new THREE.Color("#02060A");
+    const color = new THREE.Color("#000000");
     const gl = {
       toneMapping: THREE.NoToneMapping,
       outputColorSpace: THREE.SRGBColorSpace,
@@ -513,11 +517,12 @@ describe("stability read", () => {
       assert.equal(after, sealedNodes);
       assert.equal(scene.children.length, 1);
       assert.equal(scene.children[0], rig.root);
-      assert.equal(LOCK.void, "#02060A");
+      assert.equal(LOCK.void, "#000000");
       assert.equal(LOCK.strom, "#3AD7FF");
       assert.equal(LOCK.kern, "#E7FBFF");
+      assert.equal(LOCK.saft, "#B6E24A");
       assert.equal(LOCK.signal, "#FF3B4E");
-      assert.equal(LOCK.proportions.headRadius, 0.105);
+      assert.equal(LOCK.proportions.headRadius, 0.1);
       assert.equal(rig.shoulderR.position.x, -LOCK.proportions.shoulderX);
       assert.ok(Object.isFrozen(LOCK));
       assert.ok(Object.isFrozen(LOCK.proportions));
