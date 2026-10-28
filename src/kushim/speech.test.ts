@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, before, describe, it } from "node:test";
 import { createKushim } from "@/kushim/anatomy";
 import { FIRST_PAUSE_MS, gapAfterSentence } from "@/kushim/dialogue";
-import type { MouthBreath } from "@/kushim/lipsync";
+import { estimateSpeechMs, type MouthBreath } from "@/kushim/lipsync";
 import { tickKushim, type Pose } from "@/kushim/motion";
 import { sampleSpeechMouth, speakBrowser, stopSpeech } from "@/kushim/speech";
 
@@ -198,6 +198,56 @@ describe("idle speech bus", () => {
         assertSampleRest(WILD_BREATH);
         assertMeshRest(rig, restY);
       }
+    } finally {
+      clock.restore();
+      rig.dispose();
+    }
+  });
+
+  it("rests the last viseme once the text clock ends, while onend is still out", () => {
+    // Measured open before the gate, line "da" (ih then aa, estimate ~154 ms).
+    // At durationMs and 400 ms later, onend unfired, the sample stayed on aa:
+    // speaking, level 0.85, sx 1.496, jaw 0.144. A wild breath opened it further.
+    // weightsAt still returned aa. Same rest as idle from the text clock on. No fade.
+    const rig = createKushim();
+    const clock = holdClock();
+    const text = "da";
+    const pending = speakBrowser(text, 1, 80, "de-DE");
+    pending.catch(() => {});
+    try {
+      const restY = rig.jaw.position.y;
+      const duration = estimateSpeechMs(text, 1);
+      const started = 20_000;
+      assert.equal(utterances.length, 1);
+      assert.equal(queued.length, 0);
+
+      clock.set(started + duration * 0.75);
+      const earlyAa = sampleSpeechMouth(false);
+      assert.equal(earlyAa.speaking, true);
+      assert.ok(earlyAa.sx > 1.3, `last viseme should stay open inside the clock, sx=${earlyAa.sx}`);
+      assert.ok(earlyAa.jaw > 0.1, `last viseme should drop the jaw inside the clock, jaw=${earlyAa.jaw}`);
+      tickKushim(rig, pose({ gesture: "speak", speaking: true }), 0.016, 0.2);
+      assert.ok(rig.lips.scale.x > 1.2);
+      assert.ok(restY - rig.jaw.position.y > 0.004);
+
+      clock.set(started + duration - 1);
+      const lateAa = sampleSpeechMouth(false);
+      assert.deepEqual(lateAa, earlyAa);
+
+      clock.set(started + duration + 1);
+      assert.equal(queued.length, 0);
+      assertSampleRest(WILD_BREATH);
+      tickKushim(rig, pose({ gesture: "speak", speaking: true }), 0.016, 0.4);
+      assertMeshRest(rig, restY);
+
+      for (let i = 1; i <= 8; i++) {
+        clock.set(started + duration + i * 50);
+        tickKushim(rig, pose({ gesture: "speak", speaking: true }), 0.016, 0.5 + i * 0.016);
+        assertSampleRest(WILD_BREATH);
+        assertMeshRest(rig, restY);
+      }
+      assert.equal(queued.length, 0);
+      assert.equal(utterances.length, 1);
     } finally {
       clock.restore();
       rig.dispose();

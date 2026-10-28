@@ -135,6 +135,10 @@ export function sampleSpeechMouth(reduced: boolean, breath?: MouthBreath) {
   } else {
     elapsedMs = performance.now() - bus.startedAt;
   }
+  // weightsAt keeps the last shape for any later sample. The text clock can
+  // finish before utterance.onend; past it the mouth is the same rest as idle.
+  // No fade. The estimate may be shorter than the voice.
+  if (bus.mode === "timed" && bus.durationMs > 0 && elapsedMs >= bus.durationMs) return rest;
   const shaped = mouthTransform(weightsAt(bus.frames, elapsedMs), level, reduced, breath);
   return { speaking: true, level, ...shaped };
 }
