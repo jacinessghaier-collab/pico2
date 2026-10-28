@@ -157,6 +157,7 @@ export function tickKushim(rig: Rig, pose: Pose, dt: number, elapsed: number) {
   const pulse = pose.reducedMotion ? 1 : 1 + Math.sin(elapsed * 3.4) * 0.08;
   rig.core.scale.setScalar(pulse * (pose.shoulderTopic && stage.shoulderListen ? 1.15 : 1));
 
+  // The speak pose stays up across the sentence gap. An idle bus still writes rest.
   const mouth = sampleSpeechMouth(pose.reducedMotion, { exhale: cue.exhale, chest });
   applySpeechMouth(rig, mouth, pose.speaking && mouth.speaking);
 

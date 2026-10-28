@@ -121,6 +121,8 @@ function attachAnalyser(audio: HTMLAudioElement) {
 
 export function sampleSpeechMouth(reduced: boolean, breath?: MouthBreath) {
   const rest = { speaking: false, level: 0, sx: 1, sy: 1, sz: 1, jaw: 0 };
+  // Idle, including the sentence gap. Frames from the last line stay stored
+  // until the next arm and must not move the mouth.
   if (!bus.active) return rest;
   let elapsedMs = 0;
   let level = 0.85;
