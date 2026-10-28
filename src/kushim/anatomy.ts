@@ -291,7 +291,10 @@ function nerveMaterial(color: string, speed: number) {
     vertexShader: nerveVert,
     fragmentShader: nerveFrag,
   });
-  sealShaderChannels(material, signal ? ["uColor", "uCore", "uSpeed"] : ["uColor", "uCore", "uSpeed", "uShow"]);
+  sealShaderChannels(
+    material,
+    signal ? ["uColor", "uCore", "uSpeed"] : ["uColor", "uCore", "uSpeed", "uShow"],
+  );
   markMaterial(material, signal ? "signal" : "nerve");
   return material;
 }
@@ -492,71 +495,59 @@ function torsoRadius(y: number) {
 }
 
 function fillTorso(ribbon: Ribbon) {
-  for (let i = 0; i < 5; i++) {
-    const x0 = (i - 2) * 0.011;
+  // Separate hairlines in lanes. Ranks stay under the idle filament gate (0.86).
+  const longs = 22;
+  for (let i = 0; i < longs; i++) {
+    const lane = i / (longs - 1) - 0.5;
+    const z = ((i % 4) - 1.5) * 0.01;
     pushCurve(
       ribbon,
-      18,
+      24,
       (u) => {
-        const y = -0.3 + u * 0.8;
-        const sway = Math.sin(u * Math.PI * (1.1 + i * 0.18)) * (0.008 + (i % 3) * 0.006);
-        return new THREE.Vector3(x0 + sway, y, -0.015 + Math.sin(u * 2.4 + i) * 0.014);
+        const y = -0.3 + u * 0.7;
+        const reach = torsoRadius(y) * 1.35;
+        const drift = Math.sin(u * Math.PI * 1.15 + i * 0.9) * 0.0035;
+        return new THREE.Vector3(lane * reach + drift, y, z + Math.sin(u * 2.2 + i) * 0.005);
       },
-      0.04 + i * 0.03,
-      i === 2 ? 0.00155 : 0.00115,
-      i === 2 ? 1.05 : 0.9,
-      0.48,
-      0.12,
+      0.04 + (i % 8) * 0.035,
+      0.00013,
+      0.58,
+      0.42,
+      0.08,
     );
   }
 
   for (const side of [-1, 1] as const) {
-    const flows = [
-      { y0: 0.28, y1: 0.34, reach: 0.2, z: 0.05, rank: 0.08 },
-      { y0: 0.12, y1: 0.26, reach: 0.17, z: 0.07, rank: 0.14 },
-      { y0: -0.02, y1: 0.14, reach: 0.15, z: 0.06, rank: 0.2 },
-      { y0: -0.16, y1: 0.02, reach: 0.13, z: 0.03, rank: 0.26 },
-      { y0: -0.28, y1: -0.1, reach: 0.11, z: 0.0, rank: 0.32 },
-    ];
-    for (let n = 0; n < flows.length; n++) {
-      const flow = flows[n];
+    for (let n = 0; n < 5; n++) {
+      const y0 = -0.2 + n * 0.09;
       pushCurve(
         ribbon,
-        14,
+        8,
         (u) => {
-          const bow = Math.sin(u * Math.PI);
-          const y = flow.y0 + (flow.y1 - flow.y0) * u;
-          const reach = torsoRadius(y) * flow.reach * 1.15;
-          return new THREE.Vector3(
-            side * (0.01 + u * reach + bow * 0.012),
-            y + bow * 0.018,
-            -0.03 + bow * flow.z + Math.sin(u * 5 + n) * 0.006,
-          );
+          const y = y0 + u * 0.05;
+          const reach = torsoRadius(y) * (0.25 + u * 0.7);
+          return new THREE.Vector3(side * reach, y + Math.sin(u * Math.PI) * 0.008, 0.01);
         },
-        flow.rank,
-        0.00135,
-        1.0,
-        0.4,
+        0.2 + n * 0.04,
+        0.0001,
         0.22,
+        0.3,
+        0.2,
       );
     }
   }
 
   for (let i = 0; i < 5; i++) {
-    const ang = (i / 5) * Math.PI * 2;
+    const x = (i / 4 - 0.5) * 0.07;
     pushCurve(
       ribbon,
       8,
       (u) =>
-        new THREE.Vector3(
-          Math.cos(ang) * (0.01 + u * 0.012),
-          0.3 + u * 0.14,
-          Math.sin(ang) * 0.01,
-        ),
-      0.18,
-      0.00055,
-      0.48,
-      0.32,
+        new THREE.Vector3(x + Math.sin(u * 2 + i) * 0.003, 0.28 + u * 0.1, ((i % 3) - 1) * 0.008),
+      0.14 + (i % 3) * 0.04,
+      0.0001,
+      0.16,
+      0.24,
       0.25,
     );
   }
@@ -573,25 +564,26 @@ function fillLimb(
   seed: number,
   side: number,
 ) {
+  const lanes = Math.max(1, count - 1);
   for (let i = 0; i < count; i++) {
-    const ang = (i / count) * Math.PI * 2 + seed;
-    const rad = radius * (0.3 + (i % 4) * 0.16);
+    const lane = (i / lanes - 0.5) * radius * 2;
+    const depth = ((i % 3) - 1) * radius * 0.28;
     pushCurve(
       ribbon,
-      12,
+      16,
       (u) => {
-        const meander = Math.sin(u * Math.PI * 2 + seed + i) * radius * 0.45;
+        const drift = Math.sin(u * Math.PI * 1.1 + seed + i) * radius * 0.045;
         return new THREE.Vector3(
-          Math.cos(ang) * rad + meander + side * 0.002,
+          lane + drift + side * 0.001,
           -u * length,
-          Math.sin(ang + u * 1.4) * rad * 0.7,
+          depth + Math.sin(u * Math.PI * 0.7 + i) * radius * 0.06,
         );
       },
-      Math.min(0.84, rank + (i / count) * 0.12),
+      Math.min(0.8, rank + (i / count) * 0.08),
       width,
       gain,
       0.4,
-      0.45,
+      0.12,
     );
   }
 }
@@ -624,8 +616,8 @@ function fillHand(ribbon: Ribbon, side: 1 | -1) {
             0.006 + (tipZ - 0.006) * u,
           ),
         0.16 + f * 0.04,
-        0.00055,
-        0.72,
+        0.0002,
+        0.4,
         0.22,
         0.78,
       );
@@ -636,8 +628,8 @@ function fillHand(ribbon: Ribbon, side: 1 | -1) {
     8,
     (u) => new THREE.Vector3((-0.032 + u * 0.064) * side, -0.028, 0.014),
     0.28,
-    0.00032,
-    0.42,
+    0.00018,
+    0.28,
     0.16,
     0.2,
   );
@@ -653,8 +645,8 @@ function fillFoot(ribbon: Ribbon, side: 1 | -1) {
         6,
         (u) => new THREE.Vector3(x * u + spread, -0.012 - u * 0.006, 0.02 + u * 0.145),
         0.22 + t * 0.04,
-        0.0005,
-        0.64,
+        0.00018,
+        0.36,
         0.16,
         0.82,
       );
@@ -665,8 +657,8 @@ function fillFoot(ribbon: Ribbon, side: 1 | -1) {
     6,
     (u) => new THREE.Vector3(side * 0.004, -0.02, 0.02 + u * 0.1),
     0.3,
-    0.00034,
-    0.4,
+    0.00018,
+    0.26,
     0.14,
     0.4,
   );
@@ -676,35 +668,51 @@ function fillHead(ribbon: Ribbon, radius: number) {
   const ry = radius * 1.16;
   const rx = radius;
   const rz = radius * 1.02;
-  const onSkull = (theta: number, phi: number, lift = 1.01) =>
-    new THREE.Vector3(
-      Math.sin(theta) * Math.cos(phi) * rx * lift,
-      Math.cos(theta) * ry * lift,
-      Math.sin(theta) * Math.sin(phi) * rz * lift,
-    );
-
-  pushCurve(
-    ribbon,
-    14,
-    (u) => onSkull(0.35 + u * 1.35, Math.PI / 2, 1.02),
-    0.08,
-    0.00085,
-    0.55,
-    0.4,
-    0.15,
-  );
-
-  for (let m = 0; m < 4; m++) {
-    const phi = 0.4 + (m / 4) * 2.3;
+  // Short interior wisps. No front midline, no eye or brow traces.
+  for (let i = 0; i < 16; i++) {
+    const phi = (i / 16) * Math.PI * 2 + 0.4;
+    const lift = 0.28 + (i % 5) * 0.07;
+    const theta0 = 0.45 + (i % 4) * 0.18;
     pushCurve(
       ribbon,
-      8,
-      (u) => onSkull(0.45 + u * 0.9, phi, 0.72 + u * 0.2),
-      0.3 + m * 0.05,
-      0.0004,
-      0.28,
-      0.34,
-      0.2,
+      7,
+      (u) => {
+        const theta = theta0 + u * 0.5;
+        const wob = Math.sin(u * Math.PI + i * 0.7) * 0.2;
+        return new THREE.Vector3(
+          Math.sin(theta) * Math.cos(phi + wob) * rx * lift,
+          Math.cos(theta) * ry * lift * 0.92,
+          Math.sin(theta) * Math.sin(phi + wob) * rz * lift,
+        );
+      },
+      0.1 + (i % 5) * 0.05,
+      0.00014,
+      0.36,
+      0.4,
+      0.05,
+    );
+  }
+  for (let i = 0; i < 14; i++) {
+    const phi = (i / 14) * Math.PI * 2 + 0.15;
+    const lift = 0.32 + (i % 4) * 0.08;
+    const theta0 = 0.85 + (i % 5) * 0.12;
+    pushCurve(
+      ribbon,
+      6,
+      (u) => {
+        const theta = theta0 + u * 0.42;
+        const wob = Math.sin(u * Math.PI + i) * 0.25;
+        return new THREE.Vector3(
+          Math.sin(theta) * Math.cos(phi + wob) * rx * lift,
+          Math.cos(theta) * ry * lift,
+          Math.sin(theta) * Math.sin(phi + wob) * rz * lift,
+        );
+      },
+      0.18 + (i % 4) * 0.04,
+      0.00012,
+      0.3,
+      0.36,
+      0.04,
     );
   }
 }
@@ -812,17 +820,17 @@ export function createKushim(): Rig {
   skull.scale.set(1, 1.16, 1.02);
   skull.userData.lockKey = "skull";
   const jaw = solid(head, new THREE.SphereGeometry(P.headRadius * 0.72, 16, 12), glass);
-  jaw.position.set(0, -0.055, 0.02);
-  jaw.scale.set(0.92, 0.62, 0.85);
+  jaw.position.set(0, 0, 0);
+  jaw.scale.set(0.05, 0.05, 0.05);
   jaw.userData.restX = jaw.rotation.x;
   jaw.userData.restY = jaw.position.y;
-  const lips = solid(head, capsule(0.008, 0.045), glass);
-  lips.position.set(0, -0.045, P.headRadius * 0.86);
+  const lips = solid(head, capsule(0.0015, 0.012), glass);
+  lips.position.set(0, 0, 0);
   lips.rotation.z = Math.PI / 2;
-  for (const side of [-1, 1]) {
+  for (const side of [-1, 1] as const) {
     const ear = solid(head, new THREE.SphereGeometry(0.028, 10, 8), glass);
-    ear.position.set(side * 0.1, -0.01, 0);
-    ear.scale.set(0.45, 1, 0.7);
+    ear.position.set(side * 0.09, -0.008, -0.01);
+    ear.scale.set(0.18, 0.48, 0.28);
   }
   const headNerves = emptyRibbon();
   fillHead(headNerves, P.headRadius);
@@ -858,8 +866,8 @@ export function createKushim(): Rig {
   const eyes: THREE.Sprite[] = [];
   for (const side of [-1, 1]) {
     const eye = new THREE.Sprite(eyeMat);
-    eye.position.set(side * 0.032, 0.012, P.headRadius * 0.92);
-    eye.scale.set(0.028, 0.028, 1);
+    eye.position.set(side * 0.032, 0.012, P.headRadius * 0.2);
+    eye.scale.set(0, 0, 0);
     eye.renderOrder = 4;
     eye.userData.restX = eye.position.x;
     eye.userData.restY = eye.position.y;
@@ -876,8 +884,8 @@ export function createKushim(): Rig {
   sealLookColor(browMat.color);
   markMaterial(browMat, "sprite");
   const forehead = new THREE.Sprite(browMat);
-  forehead.position.set(0, 0.055, P.headRadius * 0.9);
-  forehead.scale.set(0.05, 0.05, 1);
+  forehead.position.set(0, 0.02, 0);
+  forehead.scale.set(0, 0, 0);
   forehead.renderOrder = 4;
   head.add(forehead);
   disposables.push(browTex, forehead.material);
@@ -895,7 +903,7 @@ export function createKushim(): Rig {
     const upperMesh = solid(shoulder, capsule(0.046, P.upperArm), glass);
     upperMesh.position.y = -P.upperArm / 2;
     const upperN = emptyRibbon();
-    fillLimb(upperN, P.upperArm, 4, 0.028, 0.1, 0.00085, 0.62, side * 1.3, side);
+    fillLimb(upperN, P.upperArm, 16, 0.032, 0.06, 0.00013, 0.6, side * 1.3, side);
     commitRibbon(shoulder, upperN, nerve);
 
     const elbow = new THREE.Group();
@@ -905,7 +913,7 @@ export function createKushim(): Rig {
     const foreMesh = solid(elbow, capsule(0.036, P.foreArm), glass);
     foreMesh.position.y = -P.foreArm / 2;
     const foreN = emptyRibbon();
-    fillLimb(foreN, P.foreArm, 3, 0.02, 0.14, 0.0007, 0.5, side * 2.1, side);
+    fillLimb(foreN, P.foreArm, 12, 0.022, 0.08, 0.00012, 0.55, side * 2.1, side);
     commitRibbon(elbow, foreN, nerve);
 
     const wrist = new THREE.Group();
@@ -987,7 +995,7 @@ export function createKushim(): Rig {
     const thighMesh = solid(hip, capsule(0.068, P.thigh), glass);
     thighMesh.position.y = -P.thigh / 2;
     const hipN = emptyRibbon();
-    fillLimb(hipN, P.thigh, 4, 0.038, 0.08, 0.0009, 0.66, side * 2.4, side);
+    fillLimb(hipN, P.thigh, 18, 0.048, 0.05, 0.00014, 0.6, side * 2.4, side);
     pushCurve(
       hipN,
       7,
@@ -998,8 +1006,8 @@ export function createKushim(): Rig {
           -0.02 + u * 0.04,
         ),
       0.26,
-      0.0004,
-      0.55,
+      0.0002,
+      0.32,
       0.16,
       0.2,
     );
@@ -1014,7 +1022,7 @@ export function createKushim(): Rig {
     const shinMesh = solid(knee, capsule(0.046, P.shin), glass);
     shinMesh.position.y = -P.shin / 2;
     const shinN = emptyRibbon();
-    fillLimb(shinN, P.shin, 3, 0.024, 0.12, 0.00072, 0.5, 3.1 + side, side);
+    fillLimb(shinN, P.shin, 14, 0.03, 0.08, 0.00012, 0.55, 3.1 + side, side);
     commitRibbon(knee, shinN, nerve);
 
     const ankle = new THREE.Group();
@@ -1041,12 +1049,26 @@ export function createKushim(): Rig {
   makeLeg(-1);
 
   const pelvis = emptyRibbon();
-  const ringPts: THREE.Vector3[] = [];
-  for (let i = 0; i <= 16; i++) {
-    const a = (i / 16) * Math.PI * 2;
-    ringPts.push(new THREE.Vector3(Math.cos(a) * 0.13, P.hipY + 0.02, Math.sin(a) * 0.08));
+  for (const side of [-1, 1] as const) {
+    for (let n = 0; n < 4; n++) {
+      const y = P.hipY + 0.01 + n * 0.012;
+      pushCurve(
+        pelvis,
+        8,
+        (u) =>
+          new THREE.Vector3(
+            side * (0.02 + u * 0.1),
+            y + Math.sin(u * Math.PI) * 0.008,
+            -0.02 + u * 0.04,
+          ),
+        0.14 + n * 0.04,
+        0.00012,
+        0.32,
+        0.22,
+        0.15,
+      );
+    }
   }
-  addRibbon(pelvis, ringPts, 0.12, 0.00048, 0.62, 0.18, 0);
   commitRibbon(root, pelvis, nerve);
   addShellLight(root, disposables);
 

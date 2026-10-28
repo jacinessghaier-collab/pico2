@@ -194,6 +194,13 @@ describe("figure lock", () => {
                   0.05,
                   step * 0.41 + (hour === 8 ? 1000 : 0),
                 );
+                assert.equal(rig.nerve.uniforms.uShow.value, 1);
+                if (!shoulderTopic) {
+                  assert.equal(rig.signal.uniforms.uShow.value, 0);
+                  const coreMat = rig.core.material as THREE.ShaderMaterial;
+                  assert.equal(coreMat.uniforms.uShow.value, 0);
+                  assert.equal((rig.ring.material as THREE.PointsMaterial).opacity, 0);
+                }
                 assertRigLock(rig, "live");
               }
             }
@@ -279,7 +286,10 @@ describe("figure lock", () => {
             assert.equal(rig.chest.scale.x, 1 + cue.value * LOCK_CANON.breathX);
             assert.equal(rig.chest.scale.y, 1 + cue.value * LOCK_CANON.breathY);
             assert.equal(rig.chest.scale.z, 1 + cue.value * LOCK_CANON.breathZ);
-            assert.equal(rig.chest.position.y, LOCK.proportions.chestY + cue.value * LOCK_CANON.breathLift);
+            assert.equal(
+              rig.chest.position.y,
+              LOCK.proportions.chestY + cue.value * LOCK_CANON.breathLift,
+            );
             const chest = { x: rig.chest.scale.x, y: rig.chest.scale.y, z: rig.chest.scale.z };
             for (const weights of shapes) {
               const mouth = mouthTransform(weights, 1, false, { exhale: cue.exhale, chest });
@@ -292,7 +302,10 @@ describe("figure lock", () => {
             }
           }
           const chest = { x: rig.chest.scale.x, y: rig.chest.scale.y, z: rig.chest.scale.z };
-          const open = mouthTransform(shapes[0], 1, false, { exhale: 1, chest: { x: 1, y: 1, z: 1 } });
+          const open = mouthTransform(shapes[0], 1, false, {
+            exhale: 1,
+            chest: { x: 1, y: 1, z: 1 },
+          });
           const eased = mouthTransform(shapes[0], 1, false, { exhale: 0, chest });
           applySpeechMouth(rig, open, true);
           const openY = rig.jaw.position.y;
@@ -349,7 +362,9 @@ describe("figure lock", () => {
       assert.throws(() => assertRigLock(rig, "live"), loud);
       rig.chest.layers.set(0);
 
-      const skull = rig.head.children.find((child) => child.userData.lockKey === "skull") as THREE.Mesh;
+      const skull = rig.head.children.find(
+        (child) => child.userData.lockKey === "skull",
+      ) as THREE.Mesh;
       assert.ok(skull);
       const sealedGeo = skull.geometry;
       skull.geometry = new THREE.SphereGeometry(LOCK.proportions.headRadius, 8, 6);
@@ -455,14 +470,7 @@ describe("camera and void", () => {
         ),
       LockBreach,
     );
-    assert.throws(
-      () =>
-        assertClearLock(
-          { ...gl, getClearAlpha: () => 0 },
-          scene,
-        ),
-      loud,
-    );
+    assert.throws(() => assertClearLock({ ...gl, getClearAlpha: () => 0 }, scene), loud);
     scene.background = new THREE.Color("#111111");
     assert.throws(() => assertClearLock(gl, scene), loud);
     scene.background = null;
