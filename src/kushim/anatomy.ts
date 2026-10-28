@@ -387,9 +387,8 @@ function hugCenter(chestLocalY: number, radius: number) {
 }
 
 /**
- * Upper-arm axis in chest space. The root stays buried in the axilla.
- * Below the deltoid the whole tube hangs under the shoulder line, so the
- * biceps is a limb and not a rim stuck to the chest.
+ * Filament axis in chest space. The glass shell is `upperGlass`.
+ * This center stays put so the nerve paths from #27 do not move.
  */
 function upperCenter(t: number) {
   const u = Math.min(1, Math.max(0, t));
@@ -398,8 +397,7 @@ function upperCenter(t: number) {
   const y = LOCK.proportions.shoulderLocalY + tubeY;
   const hugged = hugCenter(y, r);
   const shoulderHalf = shellRadius(LOCK.proportions.shoulderLocalY) * SHELL_SX;
-  // Outer rim stays with the shoulder. The radius is small enough that the
-  // inner rim clears the ribs, so the arm is a tube and not a buried cap.
+  // The old shell sat 0.034 outside the shoulder. Filaments still follow it.
   const line = shoulderHalf + 0.034;
   const free = line - r;
   const hold = 1 - hermite(0.12, 0.4, u);
@@ -409,33 +407,83 @@ function upperCenter(t: number) {
   return { r, y, center };
 }
 
+/**
+ * Glass upper arm. The outer rim stays on the shoulder line or inside it.
+ * Where a full biceps would enter the ribs, the tube slims instead.
+ */
+function upperGlass(t: number) {
+  const src = upperCenter(t);
+  const u = Math.min(1, Math.max(0, t));
+  const shoulderHalf = shellRadius(LOCK.proportions.shoulderLocalY) * SHELL_SX;
+  const torsoHalf = shellRadius(src.y) * SHELL_SX;
+  const gap = 0.008;
+  const outerCap = shoulderHalf;
+  const span = outerCap - (torsoHalf + gap);
+  const free = hermite(0.18, 0.46, u) * (1 - hermite(0.72, 0.94, u));
+  const room = Math.max(0, span * 0.5);
+  const fitR = src.r * (1 - free) + Math.min(src.r, room) * free;
+  const parked = outerCap - fitR;
+  let center = src.center + (Math.min(src.center, parked) - src.center) * free;
+  if (center + fitR > outerCap) center = outerCap - fitR;
+  return { r: fitR, y: src.y, center };
+}
+
 /** Round upper arm. A flat ellipse puts a hard rim on the lateral pole. */
 function upperSection(t: number, a: number, r: number) {
+  const glass = upperGlass(t);
+  const bone = Math.max(1e-4, radiusAt(UPPER_RADII, Math.min(1, Math.max(0, t))));
+  const rad = glass.r * (r / bone);
   const belly = Math.exp(-((t - 0.5) ** 2) / 0.07);
   const s = Math.sin(a);
   const depth = 0.98 + (s > 0 ? 0.06 * belly : 0.03 * belly);
-  return { x: Math.cos(a) * r, z: s * r * depth };
+  return { x: Math.cos(a) * rad, z: s * rad * depth };
 }
 
 /**
- * Calf cross-section. The tibia stays near the bone; the gastrocnemius
- * swells behind it just under the knee, then the Achilles thins.
+ * Calf cross-section. Two gastrocnemius heads sit behind a flat tibia:
+ * the lateral head higher, the medial head lower and fuller, with a
+ * groove between them. The frontal width is inside the old spindle.
+ * The posterior belly stays, so the side view keeps the gut.
  */
 function shinSection(t: number, a: number, r: number, side: 1 | -1) {
   const s = Math.sin(a);
-  // High belly, then the tendon. Equal front and back is the lathe vase.
-  const belly = Math.exp(-((t - 0.52) ** 2) / 0.032);
-  const risen = hermite(0.4, 0.52, t) * (1 - hermite(0.68, 0.86, t));
-  const mass = belly * risen;
+  const c = Math.cos(a);
+  const outward = side * c;
   const front = Math.max(0, s);
   const back = Math.max(0, -s);
-  const lateral = Math.max(0, side * Math.cos(a));
-  const x = Math.cos(a) * r * (0.9 + 0.04 * mass) + side * lateral * r * 0.1 * mass;
+  const belly = Math.exp(-((t - 0.5) ** 2) / 0.04);
+  const risen = hermite(0.22, 0.42, t) * (1 - hermite(0.7, 0.9, t));
+  const mass = belly * risen;
+  const latT = Math.exp(-((t - 0.38) ** 2) / 0.016);
+  const medT = Math.exp(-((t - 0.58) ** 2) / 0.018);
+  const live = hermite(0.14, 0.32, t) * (1 - hermite(0.78, 0.94, t));
+  const lat = Math.exp(-((outward - 0.78) ** 2) / 0.05) * back;
+  const med = Math.exp(-((outward + 0.82) ** 2) / 0.045) * back;
+  const groove = Math.exp(-(outward * outward) / 0.16) * back;
+  const xScale = 0.84 - 0.1 * Math.exp(-((t - 0.55) ** 2) / 0.03);
+  const x =
+    c * r * xScale + side * lat * latT * live * r * 0.9 - side * med * medT * live * r * 0.62;
+  const zFront = front ** 1.7 * r * (0.36 - 0.12 * mass);
+  const zBack = back ** 0.85 * r * (0.78 + 0.75 * mass);
   const z =
-    front ** 1.45 * r * (0.46 + 0.24 * (1 - mass)) -
-    back ** 0.7 * r * (0.76 + 0.95 * mass) -
-    r * 0.18 * mass;
+    zFront -
+    zBack -
+    lat * latT * live * r * 1.0 -
+    med * medT * live * r * 1.2 +
+    groove * Math.max(latT, medT) * live * mass * r * 1.15;
   return { x, z };
+}
+
+/** Frontal half-width of the calf glass. The aura wraps this, not the bone radius. */
+function shinHalf(t: number) {
+  const u = Math.min(1, Math.max(0, t));
+  const r = radiusAt(SHIN_RADII, u);
+  let reach = 0;
+  for (let j = 0; j < 36; j++) {
+    const p = shinSection(u, (j / 36) * Math.PI * 2, r, 1);
+    reach = Math.max(reach, Math.abs(p.x));
+  }
+  return reach;
 }
 
 /** 0 inside the torso glass, 1 once the vertex clears the skin. */
@@ -460,6 +508,8 @@ type TubeOpts = {
   hug?: boolean;
   /** Local XZ of the ring. Default is the flat limb ellipse. */
   section?: (t: number, angle: number, radius: number) => { x: number; z: number };
+  /** Ring segments. The calf needs a finer ring so the groove is a real valley. */
+  seg?: number;
 };
 
 /**
@@ -476,7 +526,7 @@ function organicTube(
   dist: number,
   opts?: TubeOpts,
 ) {
-  const seg = 22;
+  const seg = opts?.seg ?? 22;
   const rings = 24;
   const sleeve = opts?.sleeve ?? 0;
   const tuckPower = opts?.tuckPower ?? 2;
@@ -495,7 +545,7 @@ function organicTube(
       r *= 1 + sleeve * tip;
     }
     let bias = -side * inset * Math.pow(1 - t, tuckPower);
-    if (opts?.hug) bias = side * (upperCenter(t).center - shoulderX);
+    if (opts?.hug) bias = side * (upperGlass(t).center - shoulderX);
     let cover = 1;
     if (opts?.join === "child" && prox > 0) cover = Math.min(cover, hermite(0, -prox, y));
     else if (prox > 0) cover = Math.min(cover, hermite(prox, 0, y));
@@ -586,7 +636,7 @@ function fadeTorsoSides(geo: THREE.BufferGeometry) {
       const tubeY = y - yTop;
       const t = (BLEND.shoulder - tubeY) / (BLEND.shoulder + P.upperArm);
       if (t > 0.02 && t < 0.9) {
-        const arm = upperCenter(Math.min(1, Math.max(0, t)));
+        const arm = upperGlass(Math.min(1, Math.max(0, t)));
         if (Math.abs(z) < arm.r * 0.5) {
           for (const side of [1, -1] as const) {
             const ex = (x - side * arm.center) / (arm.r * 0.92);
@@ -783,8 +833,8 @@ const FORE_RADII = [0.034, 0.036, 0.044, 0.046, 0.04, 0.03, 0.022];
 /** Quad belly, then the knee radius so the bridge stays the same tube. */
 const THIGH_RADII = [0.096, 0.104, 0.106, 0.088, 0.066, 0.048, 0.042, 0.042, 0.042];
 /**
- * Knee, then a high gastrocnemius, then the Achilles.
- * The posterior belly lives in shinSection; this is the frontal width.
+ * Knee, then the bone radius the filaments still follow.
+ * The glass frontal width and the two heads live in shinSection.
  */
 const SHIN_RADII = [0.042, 0.044, 0.05, 0.062, 0.074, 0.074, 0.05, 0.034, 0.026];
 const LIMB = {
@@ -840,7 +890,7 @@ function buildAuraFrag() {
       .join("\n    ");
   const upperPts = (sign: 1 | -1) =>
     UPPER_RADII.map((_, i) => {
-      const s = upperCenter(i / (UPPER_RADII.length - 1));
+      const s = upperGlass(i / (UPPER_RADII.length - 1));
       return { x: sign * s.center, y: chestY + s.y, r: s.r };
     });
   const bonePts = (
@@ -852,13 +902,18 @@ function buildAuraFrag() {
     inset: number,
     prox: number,
     length: number,
+    halfAt?: (t: number) => number,
   ) => {
     const t0 = prox / (prox + length);
     return radii.map((_, i) => {
       const u = radii.length === 1 ? 0 : i / (radii.length - 1);
       const t = t0 + (1 - t0) * u;
       const lean = x - inset * (1 - t) * (1 - t);
-      return { x: sign * lean, y: yJoint + (yEnd - yJoint) * u, r: radiusAt(radii, t) };
+      return {
+        x: sign * lean,
+        y: yJoint + (yEnd - yJoint) * u,
+        r: halfAt ? halfAt(t) : radiusAt(radii, t),
+      };
     });
   };
   const pair = (pos: string, neg: string) => `
@@ -879,8 +934,8 @@ function buildAuraFrag() {
     link(bonePts(THIGH_RADII, -1, HIP_X, P.hipY, kneeY, LIMB.thigh.inset, BLEND.hip, P.thigh)),
   );
   const shinPair = pair(
-    link(bonePts(SHIN_RADII, 1, HIP_X, kneeY, ankleY, 0, BLEND.knee, P.shin)),
-    link(bonePts(SHIN_RADII, -1, HIP_X, kneeY, ankleY, 0, BLEND.knee, P.shin)),
+    link(bonePts(SHIN_RADII, 1, HIP_X, kneeY, ankleY, 0, BLEND.knee, P.shin, shinHalf)),
+    link(bonePts(SHIN_RADII, -1, HIP_X, kneeY, ankleY, 0, BLEND.knee, P.shin, shinHalf)),
   );
   return /* glsl */ `
 uniform vec3 uColor;
@@ -1954,6 +2009,7 @@ export function createKushim(): Rig {
       knee,
       organicTube(SHIN_RADII, P.shin, side, 0, BLEND.knee, 0.035, {
         join: "child",
+        seg: 36,
         section: (t, a, r) => shinSection(t, a, r, side),
       }),
       glass,
