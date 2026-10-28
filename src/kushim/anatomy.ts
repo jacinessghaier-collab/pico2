@@ -1550,7 +1550,12 @@ function fillLimb(
   axisX?: (u: number) => number,
   bounds?: (u: number) => { rx: number; rz: number },
 ) {
-  // Thin trunks and short twigs inside the current tube. Not full-length lanes.
+  // Volume web inside the current tube. A few quiet cords keep a nerve
+  // direction; the density is fine twigs spread through the inset, not a
+  // thicker stroke and not a cord along two lanes. Every sample is clamped
+  // to that inset, so a chord on the taper cannot touch the cyan rim.
+  // Twig gain stays under the old lane twigs: additive overlap is the fill,
+  // and a hotter gain clips the core to white.
   let n = Math.round(seed * 19 + length * 80 + radii.length);
   const h = () => unitHash(n++);
   const flat = 0.8;
@@ -1582,75 +1587,63 @@ function fillLimb(
   };
 
   for (const lane of lanes) {
-    pushCurve(ribbon, 14, (u) => point(u, lane), Math.min(0.8, rank), width, gain * 0.62, 0.3, 0.22);
+    pushCurve(ribbon, 14, (u) => point(u, lane), Math.min(0.8, rank), width, gain * 0.48, 0.24, 0.22);
   }
 
-  const twigs = Math.round(48 + length * 120 + mean * 280);
-  for (let s = 0; s < 5; s++) {
-    const lane = lanes[s % lanes.length];
-    const t0 = 0.06 + h() * 0.45;
-    const span = 0.22 + h() * 0.28;
-    const drift = (h() - 0.5) * 0.55;
-    const zDrift = (h() - 0.5) * 0.35;
+  // 0.92 of the existing inset. The bound is already inside the glass.
+  const cap = 0.92;
+  const at = (t: number, ang: number, rad: number) => {
+    const u = Math.min(0.95, Math.max(0.06, t));
+    const rx = reachX(u);
+    const rz = reachZ(u);
+    const k = Math.min(cap, Math.max(0, rad));
+    return new THREE.Vector3(
+      axis(u) + clamp(Math.cos(ang) * rx * k, rx * cap),
+      -u * length,
+      clamp(Math.sin(ang) * rz * k, rz * cap),
+    );
+  };
+
+  const web = Math.round(130 + length * 340 + mean * 2100);
+  for (let f = 0; f < web; f++) {
+    const roll = h();
+    const u0 = 0.08 + h() * 0.76;
+    // Long cords, then diagonals, then short crosses. A comb of parallel
+    // strokes reads as air; the diagonals are what makes the lime a net.
+    const span = roll < 0.28 ? 0.12 + h() * 0.12 : roll < 0.76 ? 0.05 + h() * 0.07 : 0.02 + h() * 0.03;
+    const dir = h() < 0.5 ? 1 : -1;
+    const u1 = Math.min(0.94, Math.max(0.07, u0 + dir * span));
+    const a0 = h() * Math.PI * 2;
+    const turn = roll < 0.28 ? 0.28 + h() * 0.35 : roll < 0.76 ? 0.7 + h() * 0.9 : 1.3 + h() * 1.1;
+    const a1 = a0 + (h() - 0.5) * turn;
+    const rad0 = Math.sqrt(h()) * cap;
+    const drift = roll < 0.28 ? 0.12 : roll < 0.76 ? 0.34 : 0.5;
+    const rad1 = Math.min(cap, Math.max(0.04, rad0 + (h() - 0.5) * drift));
+    const twigGain = gain * (0.3 + h() * 0.12);
+    const samples = roll < 0.28 ? 8 : roll < 0.76 ? 6 : 4;
     pushCurve(
       ribbon,
-      8,
-      (u) => {
-        const t = Math.min(0.96, t0 + u * span);
-        const p = point(t, lane);
-        const rx = reachX(t);
-        const rz = reachZ(t);
-        p.x = axis(t) + clamp(p.x - axis(t) + drift * rx * u, rx);
-        p.z = clamp(p.z + zDrift * rz * u, rz);
-        return p;
-      },
-      Math.min(0.8, rank + 0.05),
+      samples,
+      (u) => at(u0 + (u1 - u0) * u, a0 + (a1 - a0) * u, rad0 + (rad1 - rad0) * u),
+      Math.min(0.4, rank + 0.03 + (f % 5) * 0.01),
       Math.max(width * 0.7, 0.00009),
-      gain * 0.46,
-      0.22,
-      0.35,
+      twigGain,
+      0.16 + (f % 4) * 0.02,
+      0.38,
     );
-  }
-  for (let f = 0; f < twigs; f++) {
-    const lane = lanes[f % lanes.length];
-    const t0 = 0.07 + h() * 0.86;
-    const origin = point(t0, lane);
-    const rx = reachX(t0);
-    const rz = reachZ(t0);
-    const dir = h() < 0.72 ? (h() < 0.5 ? -1 : 1) * (0.35 + h() * 1.15) : h() * Math.PI * 2;
-    const span = 0.62 + h() * 0.34;
-    const tx = axis(t0) + clamp(Math.cos(dir) * rx * span, rx);
-    const tz = clamp(Math.sin(dir) * rz * span * 0.65, rz);
-    const tipY = Math.max(-length * 0.98, origin.y - (0.07 + h() * 0.14) * length);
-    pushCurve(
-      ribbon,
-      3,
-      (u) =>
-        new THREE.Vector3(
-          origin.x + (tx - origin.x) * u,
-          origin.y + (tipY - origin.y) * u,
-          origin.z + (tz - origin.z) * u,
-        ),
-      Math.min(0.8, rank + 0.03 + (f % 4) * 0.012),
-      Math.max(width * 0.72, 0.00009),
-      gain * 0.5,
-      0.2,
-      0.5,
-    );
-    if (h() < 0.5) {
-      const fdir = dir + (h() < 0.5 ? 0.7 : -0.7);
-      const fx = axis(t0) + clamp(Math.cos(fdir) * rx * span * 0.62, rx);
-      const fz = clamp(Math.sin(fdir) * rz * span * 0.4, rz);
-      const fy = Math.max(-length * 0.98, tipY - length * 0.03);
+    if (h() < 0.3) {
+      const tip = Math.min(0.95, Math.max(0.07, u1 + dir * (0.016 + h() * 0.03)));
+      const fang = a1 + (h() < 0.5 ? 0.55 : -0.55);
+      const fr = Math.min(cap, Math.max(0.04, rad1 + (h() - 0.5) * 0.22));
       pushCurve(
         ribbon,
-        2,
-        (u) => new THREE.Vector3(tx + (fx - tx) * u, tipY + (fy - tipY) * u, tz + (fz - tz) * u),
-        Math.min(0.82, rank + 0.1),
+        3,
+        (u) => at(u1 + (tip - u1) * u, a1 + (fang - a1) * u, rad1 + (fr - rad1) * u),
+        Math.min(0.46, rank + 0.08),
         Math.max(width * 0.55, 0.000075),
-        gain * 0.34,
-        0.14,
-        0.65,
+        twigGain * 0.66,
+        0.13,
+        0.52,
       );
     }
   }
@@ -1744,9 +1737,10 @@ function calfFrame(t: number, side: 1 | -1) {
   return {
     cx,
     cz,
-    lat: contain(lat.x, lat.z, 0.74),
-    med: contain(med.x, med.z, 0.82),
-    groove: contain(groove.x, groove.z, 0.68),
+    r,
+    lat: contain(lat.x, lat.z, 0.66),
+    med: contain(med.x, med.z, 0.7),
+    groove: contain(groove.x, groove.z, 0.6),
     contain,
   };
 }
@@ -1785,7 +1779,7 @@ function fillCalf(ribbon: Ribbon, side: 1 | -1) {
           const src = laneOf(frame, trunk.lane);
           const wobX = Math.sin(uu * Math.PI * 1.35 + phase) * 0.0035;
           const wobZ = Math.sin(uu * Math.PI + phase * 1.2) * 0.0025;
-          const p = frame.contain(src.x + side * spread + wobX, src.z + wobZ);
+          const p = frame.contain(src.x + side * spread + wobX, src.z + wobZ, 0.72);
           return new THREE.Vector3(p.x, -uu * length, p.z);
         },
         0.07,
@@ -1797,43 +1791,49 @@ function fillCalf(ribbon: Ribbon, side: 1 | -1) {
     }
   }
 
-  const twigs = 88;
+  // Fine twigs inside each head and the groove. Depth stays on the
+  // section center side of the anchor, so the extra net does not climb
+  // the cyan rim or bridge the sulcus into one mass.
+  const twigs = 340;
   for (let i = 0; i < twigs; i++) {
     const roll = h();
-    const lane: CalfLane = roll < 0.34 ? "lat" : roll < 0.8 ? "med" : "groove";
+    const lane: CalfLane = roll < 0.36 ? "lat" : roll < 0.78 ? "med" : "groove";
     const band =
-      lane === "lat" ? 0.19 + (h() - 0.55) * 0.28 : lane === "med" ? 0.45 + (h() - 0.45) * 0.32 : 0.14 + h() * 0.7;
+      lane === "lat" ? 0.18 + h() * 0.4 : lane === "med" ? 0.38 + h() * 0.44 : 0.16 + h() * 0.66;
     const u0 = Math.min(0.9, Math.max(0.08, band));
-    const along = h() < 0.64;
-    const u1 = Math.min(0.96, u0 + (along ? 0.07 + h() * 0.1 : 0.025 + h() * 0.05));
-    const startFrame = frameAt(u0);
-    const startSrc = laneOf(startFrame, lane);
-    const start = startFrame.contain(
-      startSrc.x + (h() - 0.5) * 0.01,
-      startSrc.z + (h() - 0.5) * 0.007,
-    );
-    const endFrame = frameAt(u1);
-    const targetLane: CalfLane = along ? lane : lane === "groove" ? (h() < 0.5 ? "lat" : "med") : "groove";
-    const target = laneOf(endFrame, targetLane);
-    const mix = along ? 0.22 + h() * 0.3 : 0.4 + h() * 0.35;
-    const tip = endFrame.contain(
-      start.x + (target.x - start.x) * mix + (h() - 0.5) * 0.006,
-      start.z + (target.z - start.z) * mix,
-    );
+    const span = roll < 0.62 ? 0.055 + h() * 0.07 : 0.022 + h() * 0.035;
+    const u1 = Math.min(0.95, Math.max(0.07, u0 + (h() < 0.5 ? -span : span)));
+    // Stay in the head, just inside the inset anchor. A jump in depth
+    // kinks the stroke and a low depth sinks the net into the tibia.
+    const depth0 = lane === "groove" ? 0.7 + h() * 0.22 : 0.68 + h() * 0.28;
+    const depth1 = Math.min(0.98, Math.max(0.5, depth0 + (h() - 0.5) * 0.1));
+    const tang0 = (h() - 0.5) * 2;
+    const tang1 = tang0 + (h() - 0.5) * 0.28;
+    const amp = lane === "groove" ? 0.1 : lane === "med" ? 0.38 : 0.34;
     pushCurve(
       ribbon,
-      3,
+      roll < 0.62 ? 7 : 4,
       (u) => {
         const uu = u0 + (u1 - u0) * u;
         const frame = frameAt(uu);
-        const p = frame.contain(start.x + (tip.x - start.x) * u, start.z + (tip.z - start.z) * u);
+        const src = laneOf(frame, lane);
+        const vx = src.x - frame.cx;
+        const vz = src.z - frame.cz;
+        const depth = depth0 + (depth1 - depth0) * u;
+        const tang = (tang0 + (tang1 - tang0) * u) * frame.r * amp;
+        const spanLen = Math.hypot(vx, vz) || 1;
+        const p = frame.contain(
+          frame.cx + vx * depth + (-vz / spanLen) * tang,
+          frame.cz + vz * depth + (vx / spanLen) * tang,
+          lane === "groove" ? 0.58 : 0.7,
+        );
         return new THREE.Vector3(p.x, -uu * length, p.z);
       },
-      0.09 + (i % 4) * 0.012,
-      0.000075,
-      0.4 * (lane === "med" ? 0.46 : 0.38),
-      0.18,
-      0.45,
+      0.08 + (i % 5) * 0.012,
+      0.000072,
+      0.46 * (lane === "med" ? 0.48 : lane === "lat" ? 0.42 : 0.34),
+      0.17,
+      0.4,
     );
   }
 }

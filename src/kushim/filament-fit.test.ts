@@ -189,14 +189,14 @@ describe("filament fit", () => {
     for (const shoulder of [rig.shoulderL, rig.shoulderR]) {
       const glass = glassPoints(tubeOn(shoulder));
       const nerves = nervePoints(shoulder, rig.nerve);
-      assert.ok(nerves.length > 200, `upper-arm nerves ${nerves.length}`);
+      assert.ok(nerves.length > 2300, `upper-arm centerlines ${nerves.length}, was a sparse cord`);
       let worst = 0;
       let world = 0;
       for (const p of nerves) {
         worst = Math.max(worst, overflow(p, glass));
         world = Math.max(world, Math.abs(shoulder.position.x + p.x));
       }
-      assert.ok(worst <= 0.0025, `upper-arm centerline leaves the tube by ${worst}`);
+      assert.ok(worst <= 0, `upper-arm centerline leaves the tube by ${worst}`);
       assert.ok(world <= SHOULDER_LINE + 1e-3, `upper-arm filament at ${world} past the shoulder line`);
     }
   });
@@ -205,10 +205,10 @@ describe("filament fit", () => {
     for (const elbow of [rig.elbowL, rig.elbowR]) {
       const glass = glassPoints(tubeOn(elbow));
       const nerves = nervePoints(elbow, rig.nerve);
-      assert.ok(nerves.length > 150);
+      assert.ok(nerves.length > 2000, `forearm centerlines ${nerves.length}, was a sparse cord`);
       let worst = 0;
       for (const p of nerves) worst = Math.max(worst, overflow(p, glass));
-      assert.ok(worst <= 0.0025, `forearm centerline leaves the tube by ${worst}`);
+      assert.ok(worst <= 0, `forearm centerline leaves the tube by ${worst}`);
     }
   });
 
@@ -221,10 +221,10 @@ describe("filament fit", () => {
       if (!knee) throw new Error("knee missing");
       const glass = glassPoints(tubeOn(knee));
       const nerves = nervePoints(knee, rig.nerve);
-      assert.ok(nerves.length > 200, `calf nerves ${nerves.length}`);
+      assert.ok(nerves.length > 1900, `calf centerlines ${nerves.length}, was a sparse cord`);
       let worst = 0;
       for (const p of nerves) worst = Math.max(worst, overflow(p, glass));
-      assert.ok(worst <= 0.0025, `calf centerline leaves the glass by ${worst}`);
+      assert.ok(worst <= 0, `calf centerline leaves the glass by ${worst}`);
 
       const belly = nerves.filter((p) => {
         const t = (0.14 - p.y) / (0.14 + LOCK.proportions.shin);
