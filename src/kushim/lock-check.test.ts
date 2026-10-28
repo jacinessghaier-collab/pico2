@@ -76,9 +76,12 @@ describe("appearance lock table", () => {
     assert.equal(LOCK_CANON.void, "#000000");
     assert.equal(LOCK_CANON.glass.fill, 0.004);
     assert.equal(LOCK_CANON.glass.rim, 0.95);
-    assert.equal(LOCK_CANON.aura.opacity, 0.55);
-    assert.equal(LOCK_CANON.aura.tight, 980);
-    assert.equal(LOCK_CANON.ground.radius, 0.24);
+    assert.equal(LOCK_CANON.aura.opacity, 0.42);
+    assert.equal(LOCK_CANON.aura.tight, 480);
+    assert.equal(LOCK_CANON.aura.z, 0);
+    assert.equal(LOCK_CANON.ground.opacity, 0.2);
+    assert.equal(LOCK_CANON.ground.radius, 0.3);
+    assert.equal(LOCK_CANON.ground.tight, 1.15);
     assert.equal(LOCK_CANON.ground.foot, 0.11);
     assert.equal(LOCK_CANON.brightBoost, 0);
     assert.equal(LOCK_CANON.strom, "#3AD7FF");
@@ -132,6 +135,20 @@ describe("appearance lock table", () => {
 });
 
 describe("figure lock", () => {
+  it("keeps shoulders, elbows, hips and knees free of joint orbs", () => {
+    const rig = createKushim();
+    try {
+      let spheres = 0;
+      rig.root.traverse((obj) => {
+        const geo = (obj as THREE.Mesh).geometry as { type?: string } | undefined;
+        if (geo?.type === "SphereGeometry") spheres += 1;
+      });
+      assert.equal(spheres, 5);
+    } finally {
+      rig.dispose();
+    }
+  });
+
   it("seals the rest pose and keeps the signal on the figure's right", () => {
     const rig = createKushim();
     try {
