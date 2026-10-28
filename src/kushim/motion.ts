@@ -130,18 +130,22 @@ export function tickKushim(rig: Rig, pose: Pose, dt: number, elapsed: number) {
   rig.signal.uniforms.uTime.value = elapsed;
   rig.nerve.uniforms.uDensity.value = stage.filament;
   rig.signal.uniforms.uDensity.value = 1;
+  const hotspot = pose.shoulderTopic ? 1 : 0;
+  rig.signal.uniforms.uShow.value = hotspot;
+  const coreUniforms = (rig.core.material as { uniforms?: { uShow?: { value: number } } }).uniforms;
+  if (coreUniforms?.uShow) coreUniforms.uShow.value = hotspot;
 
   const positions = rig.ring.geometry.getAttribute("position");
   const array = positions.array as Float32Array;
   let radius = 0.055;
-  let opacity = 0.2;
-  if (!pose.reducedMotion) {
+  let opacity = 0;
+  if (pose.shoulderTopic && !pose.reducedMotion) {
     const cycle = (elapsed % 6.2) / 6.2;
     if (cycle < 0.45) {
       const u = cycle / 0.45;
       radius = 0.05 + u * 0.2;
       opacity = 0.95 * (1 - u);
-    }
+    } else opacity = 0.2;
   }
   if (pose.shoulderTopic && stage.shoulderListen) opacity = Math.min(1, opacity + 0.35);
   for (let i = 0; i < rig.ringAngles.length; i++) {

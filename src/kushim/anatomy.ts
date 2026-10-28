@@ -64,25 +64,50 @@ void main() {
 }
 `;
 
+const coreFrag = /* glsl */ `
+uniform vec3 uColor;
+uniform vec3 uCore;
+uniform float uBoost;
+uniform float uShow;
+varying vec3 vN;
+varying vec3 vW;
+void main() {
+  vec3 viewDir = normalize(cameraPosition - vW);
+  float fres = pow(1.0 - abs(dot(normalize(vN), viewDir)), 2.35);
+  float spine = exp(-abs(vW.x) * 14.0) * smoothstep(0.35, 1.15, vW.y) * smoothstep(1.75, 1.35, vW.y);
+  vec3 chest = vW - vec3(0.0, 1.34, 0.06);
+  float star = exp(-dot(chest, chest) * 18.0);
+  float alpha = (fres * 0.95 * uBoost + 0.07 * uBoost + spine * 0.55 + star * 0.7) * uShow;
+  if (alpha < 0.015) discard;
+  gl_FragColor = vec4(mix(uColor, uCore, fres), alpha);
+}
+`;
+
 const nerveVert = /* glsl */ `
 attribute vec3 aDir;
 attribute float aSide;
 attribute float aAlong;
 attribute float aRank;
 attribute float aWidth;
+attribute float aGain;
+attribute float aWarm;
 uniform float uDensity;
 varying float vAlong;
 varying float vRank;
 varying float vVisible;
+varying float vGain;
+varying float vWarm;
 void main() {
   vAlong = aAlong;
   vRank = aRank;
+  vGain = aGain;
+  vWarm = aWarm;
   vVisible = aRank <= uDensity ? 1.0 : 0.0;
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   vec3 viewDir = normalize((modelViewMatrix * vec4(aDir, 0.0)).xyz);
   vec2 side = normalize(vec2(-viewDir.y, viewDir.x));
   if (length(viewDir.xy) < 0.001) side = vec2(1.0, 0.0);
-  mv.xy += side * aSide * aWidth * 18.0;
+  mv.xy += side * aSide * aWidth * 11.0;
   gl_Position = projectionMatrix * mv;
 }
 `;
@@ -92,15 +117,19 @@ uniform vec3 uColor;
 uniform vec3 uCore;
 uniform float uTime;
 uniform float uSpeed;
+uniform float uShow;
 varying float vAlong;
 varying float vRank;
 varying float vVisible;
+varying float vGain;
+varying float vWarm;
 void main() {
-  if (vVisible < 0.5) discard;
-  float wave = fract(vAlong * 2.4 - uTime * uSpeed);
-  float head = smoothstep(0.0, 0.02, wave) * smoothstep(0.2, 0.03, wave);
-  float alpha = 0.55 + head * 1.0;
-  gl_FragColor = vec4(mix(uColor, uCore, head), alpha);
+  if (vVisible < 0.5 || uShow < 0.5) discard;
+  float wave = fract(vAlong * 3.1 - uTime * uSpeed);
+  float head = smoothstep(0.0, 0.015, wave) * smoothstep(0.16, 0.02, wave);
+  float lift = clamp(mix(0.16, 0.82, vWarm) + head * 0.45, 0.0, 1.0);
+  float alpha = (0.72 + head * 0.7) * vGain;
+  gl_FragColor = vec4(mix(uColor, uCore, lift), alpha);
 }
 `;
 
@@ -111,13 +140,32 @@ type Ribbon = {
   alongs: number[];
   ranks: number[];
   widths: number[];
+  gains: number[];
+  warms: number[];
 };
 
 function emptyRibbon(): Ribbon {
-  return { positions: [], dirs: [], sides: [], alongs: [], ranks: [], widths: [] };
+  return {
+    positions: [],
+    dirs: [],
+    sides: [],
+    alongs: [],
+    ranks: [],
+    widths: [],
+    gains: [],
+    warms: [],
+  };
 }
 
-function addRibbon(target: Ribbon, pts: THREE.Vector3[], rank: number, width: number) {
+function addRibbon(
+  target: Ribbon,
+  pts: THREE.Vector3[],
+  rank: number,
+  width: number,
+  gain = 0.8,
+  warm = 0.22,
+  taper = 0,
+) {
   let total = 0;
   const acc = [0];
   for (let i = 1; i < pts.length; i++) {
@@ -148,11 +196,18 @@ function addRibbon(target: Ribbon, pts: THREE.Vector3[], rank: number, width: nu
       target.alongs.push(t);
       target.ranks.push(rank);
       target.widths.push(width);
+      target.gains.push(gain * (1 - taper * t * 0.62));
+      target.warms.push(warm);
     }
   }
 }
 
-function commitRibbon(parent: THREE.Object3D, ribbon: Ribbon, material: THREE.Material) {
+function commitRibbon(
+  parent: THREE.Object3D,
+  ribbon: Ribbon,
+  material: THREE.Material,
+  renderOrder = 2,
+) {
   if (ribbon.positions.length === 0) return;
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(ribbon.positions, 3));
@@ -161,9 +216,11 @@ function commitRibbon(parent: THREE.Object3D, ribbon: Ribbon, material: THREE.Ma
   geo.setAttribute("aAlong", new THREE.Float32BufferAttribute(ribbon.alongs, 1));
   geo.setAttribute("aRank", new THREE.Float32BufferAttribute(ribbon.ranks, 1));
   geo.setAttribute("aWidth", new THREE.Float32BufferAttribute(ribbon.widths, 1));
+  geo.setAttribute("aGain", new THREE.Float32BufferAttribute(ribbon.gains, 1));
+  geo.setAttribute("aWarm", new THREE.Float32BufferAttribute(ribbon.warms, 1));
   const mesh = new THREE.Mesh(geo, material);
   mesh.frustumCulled = false;
-  mesh.renderOrder = 2;
+  mesh.renderOrder = renderOrder;
   parent.add(mesh);
 }
 
@@ -187,6 +244,7 @@ function glassMaterial(boost: number, role: "glass" | "glass-bright") {
 }
 
 function nerveMaterial(color: string, speed: number) {
+  const signal = color === LOCK.signal;
   const material = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -194,16 +252,17 @@ function nerveMaterial(color: string, speed: number) {
     side: THREE.DoubleSide,
     uniforms: {
       uColor: { value: new THREE.Color(color) },
-      uCore: { value: new THREE.Color(color === LOCK.signal ? "#ffd0d4" : LOCK.kern) },
+      uCore: { value: new THREE.Color(signal ? "#FF8A2A" : LOCK.filamentKern) },
       uTime: { value: 0 },
       uSpeed: { value: speed },
       uDensity: { value: 1 },
+      uShow: { value: signal ? 0 : 1 },
     },
     vertexShader: nerveVert,
     fragmentShader: nerveFrag,
   });
-  sealShaderChannels(material, ["uColor", "uCore", "uSpeed"]);
-  markMaterial(material, color === LOCK.signal ? "signal" : "nerve");
+  sealShaderChannels(material, signal ? ["uColor", "uCore", "uSpeed"] : ["uColor", "uCore", "uSpeed", "uShow"]);
+  markMaterial(material, signal ? "signal" : "nerve");
   return material;
 }
 
@@ -252,35 +311,320 @@ function glowSprite(inner: string, outer: string, spikes: number) {
   return tex;
 }
 
-function alongBone(
+function pushCurve(
+  ribbon: Ribbon,
+  samples: number,
+  at: (u: number) => THREE.Vector3,
+  rank: number,
+  width: number,
+  gain: number,
+  warm: number,
+  taper = 0,
+) {
+  const pts: THREE.Vector3[] = [];
+  for (let i = 0; i <= samples; i++) pts.push(at(i / samples));
+  addRibbon(ribbon, pts, rank, width, gain, warm, taper);
+}
+
+const TORSO_PROFILE: Array<[number, number]> = [
+  [0.055, -0.3],
+  [0.12, -0.24],
+  [0.15, -0.12],
+  [0.125, 0],
+  [0.15, 0.12],
+  [0.175, 0.22],
+  [0.15, 0.3],
+  [0.075, 0.38],
+  [0.048, 0.46],
+];
+
+function torsoRadius(y: number) {
+  const pts = TORSO_PROFILE;
+  if (y <= pts[0][1]) return pts[0][0];
+  for (let i = 1; i < pts.length; i++) {
+    const [r0, y0] = pts[i - 1];
+    const [r1, y1] = pts[i];
+    if (y <= y1) {
+      const t = (y - y0) / (y1 - y0);
+      return r0 + (r1 - r0) * t;
+    }
+  }
+  return pts[pts.length - 1][0];
+}
+
+function fillTorso(ribbon: Ribbon) {
+  for (let i = 0; i < 5; i++) {
+    const x0 = (i - 2) * 0.011;
+    pushCurve(
+      ribbon,
+      18,
+      (u) => {
+        const y = -0.3 + u * 0.8;
+        const sway = Math.sin(u * Math.PI * (1.1 + i * 0.18)) * (0.008 + (i % 3) * 0.006);
+        return new THREE.Vector3(x0 + sway, y, -0.015 + Math.sin(u * 2.4 + i) * 0.014);
+      },
+      0.04 + i * 0.03,
+      i === 2 ? 0.00155 : 0.00115,
+      i === 2 ? 1.05 : 0.9,
+      0.48,
+      0.12,
+    );
+  }
+
+  for (const side of [-1, 1] as const) {
+    const flows = [
+      { y0: 0.28, y1: 0.34, reach: 0.2, z: 0.05, rank: 0.08 },
+      { y0: 0.12, y1: 0.26, reach: 0.17, z: 0.07, rank: 0.14 },
+      { y0: -0.02, y1: 0.14, reach: 0.15, z: 0.06, rank: 0.2 },
+      { y0: -0.16, y1: 0.02, reach: 0.13, z: 0.03, rank: 0.26 },
+      { y0: -0.28, y1: -0.1, reach: 0.11, z: 0.0, rank: 0.32 },
+    ];
+    for (let n = 0; n < flows.length; n++) {
+      const flow = flows[n];
+      pushCurve(
+        ribbon,
+        14,
+        (u) => {
+          const bow = Math.sin(u * Math.PI);
+          const y = flow.y0 + (flow.y1 - flow.y0) * u;
+          const reach = torsoRadius(y) * flow.reach * 1.15;
+          return new THREE.Vector3(
+            side * (0.01 + u * reach + bow * 0.012),
+            y + bow * 0.018,
+            -0.03 + bow * flow.z + Math.sin(u * 5 + n) * 0.006,
+          );
+        },
+        flow.rank,
+        0.00135,
+        1.0,
+        0.4,
+        0.22,
+      );
+    }
+  }
+
+  for (let i = 0; i < 5; i++) {
+    const ang = (i / 5) * Math.PI * 2;
+    pushCurve(
+      ribbon,
+      8,
+      (u) =>
+        new THREE.Vector3(
+          Math.cos(ang) * (0.01 + u * 0.012),
+          0.3 + u * 0.14,
+          Math.sin(ang) * 0.01,
+        ),
+      0.18,
+      0.00055,
+      0.48,
+      0.32,
+      0.25,
+    );
+  }
+}
+
+function fillLimb(
   ribbon: Ribbon,
   length: number,
-  offsets: Array<{ x: number; z: number; rank: number; width: number; seed: number }>,
+  count: number,
+  radius: number,
+  rank: number,
+  width: number,
+  gain: number,
+  seed: number,
+  side: number,
 ) {
-  for (const off of offsets) {
-    const pts: THREE.Vector3[] = [];
-    for (let i = 0; i <= 7; i++) {
-      const u = i / 7;
-      const wobble = Math.sin(u * 10 + off.seed) * 0.005;
-      pts.push(new THREE.Vector3(off.x + wobble, -u * length, off.z + wobble * 0.6));
+  for (let i = 0; i < count; i++) {
+    const ang = (i / count) * Math.PI * 2 + seed;
+    const rad = radius * (0.3 + (i % 4) * 0.16);
+    pushCurve(
+      ribbon,
+      12,
+      (u) => {
+        const meander = Math.sin(u * Math.PI * 2 + seed + i) * radius * 0.45;
+        return new THREE.Vector3(
+          Math.cos(ang) * rad + meander + side * 0.002,
+          -u * length,
+          Math.sin(ang + u * 1.4) * rad * 0.7,
+        );
+      },
+      Math.min(0.84, rank + (i / count) * 0.12),
+      width,
+      gain,
+      0.4,
+      0.45,
+    );
+  }
+}
+
+const FINGER_SPECS = [
+  { x: -0.03, z: 0.02, len: 0.052, rot: 0.5 },
+  { x: -0.012, z: 0.016, len: 0.074, rot: 0.08 },
+  { x: 0.004, z: 0.018, len: 0.082, rot: 0 },
+  { x: 0.018, z: 0.014, len: 0.076, rot: -0.08 },
+  { x: 0.03, z: 0.008, len: 0.062, rot: -0.16 },
+];
+
+function fillHand(ribbon: Ribbon, side: 1 | -1) {
+  for (let f = 0; f < FINGER_SPECS.length; f++) {
+    const spec = FINGER_SPECS[f];
+    const rot = spec.rot * side;
+    const reach = spec.len * 0.92;
+    const tipX = spec.x * side + Math.sin(rot) * reach;
+    const tipY = -0.02 - Math.cos(rot) * reach;
+    const tipZ = spec.z;
+    for (let strand = 0; strand < 2; strand++) {
+      const spread = (strand - 0.5) * 0.005;
+      pushCurve(
+        ribbon,
+        7,
+        (u) =>
+          new THREE.Vector3(
+            tipX * u + spread * Math.sin(u * Math.PI),
+            tipY * u,
+            0.006 + (tipZ - 0.006) * u,
+          ),
+        0.16 + f * 0.04,
+        0.00055,
+        0.72,
+        0.22,
+        0.78,
+      );
     }
-    addRibbon(ribbon, pts, off.rank, off.width);
+  }
+  pushCurve(
+    ribbon,
+    8,
+    (u) => new THREE.Vector3((-0.032 + u * 0.064) * side, -0.028, 0.014),
+    0.28,
+    0.00032,
+    0.42,
+    0.16,
+    0.2,
+  );
+}
+
+function fillFoot(ribbon: Ribbon, side: 1 | -1) {
+  for (let t = 0; t < 5; t++) {
+    const x = (t - 2) * 0.014 * side;
+    for (let strand = 0; strand < 2; strand++) {
+      const spread = (strand - 0.5) * 0.0035;
+      pushCurve(
+        ribbon,
+        6,
+        (u) => new THREE.Vector3(x * u + spread, -0.012 - u * 0.006, 0.02 + u * 0.145),
+        0.22 + t * 0.04,
+        0.0005,
+        0.64,
+        0.16,
+        0.82,
+      );
+    }
+  }
+  pushCurve(
+    ribbon,
+    6,
+    (u) => new THREE.Vector3(side * 0.004, -0.02, 0.02 + u * 0.1),
+    0.3,
+    0.00034,
+    0.4,
+    0.14,
+    0.4,
+  );
+}
+
+function fillHead(ribbon: Ribbon, radius: number) {
+  const ry = radius * 1.16;
+  const rx = radius;
+  const rz = radius * 1.02;
+  const onSkull = (theta: number, phi: number, lift = 1.01) =>
+    new THREE.Vector3(
+      Math.sin(theta) * Math.cos(phi) * rx * lift,
+      Math.cos(theta) * ry * lift,
+      Math.sin(theta) * Math.sin(phi) * rz * lift,
+    );
+
+  pushCurve(
+    ribbon,
+    14,
+    (u) => onSkull(0.35 + u * 1.35, Math.PI / 2, 1.02),
+    0.08,
+    0.00085,
+    0.55,
+    0.4,
+    0.15,
+  );
+
+  for (let m = 0; m < 4; m++) {
+    const phi = 0.4 + (m / 4) * 2.3;
+    pushCurve(
+      ribbon,
+      8,
+      (u) => onSkull(0.45 + u * 0.9, phi, 0.72 + u * 0.2),
+      0.3 + m * 0.05,
+      0.0004,
+      0.28,
+      0.34,
+      0.2,
+    );
+  }
+}
+
+function fillHotspot(ribbon: Ribbon) {
+  const cx = -0.05;
+  const cy = -0.04;
+  const cz = 0.04;
+  for (let i = 0; i < 16; i++) {
+    const phase = i * 2.399963;
+    const tilt = 0.35 + (i % 6) * 0.5;
+    pushCurve(
+      ribbon,
+      12,
+      (u) => {
+        const a = phase + u * Math.PI * (1.15 + (i % 3) * 0.4);
+        const rad = 0.032 + (i % 5) * 0.006;
+        const wob = Math.sin(u * Math.PI * 3 + i) * 0.01;
+        return new THREE.Vector3(
+          cx + Math.cos(a) * rad + Math.sin(tilt + u * 4) * wob,
+          cy + Math.sin(a * 0.85) * rad * 0.7 + Math.cos(u * 5 + phase) * 0.008,
+          cz + Math.sin(a + tilt) * rad * 0.62,
+        );
+      },
+      0.03 + (i % 5) * 0.02,
+      0.00105,
+      0.58,
+      0.58 + (i % 4) * 0.1,
+      0.08,
+    );
+  }
+  for (let i = 0; i < 6; i++) {
+    const ang = (i / 6) * Math.PI * 2 + 0.4;
+    pushCurve(
+      ribbon,
+      8,
+      (u) => {
+        const rad = 0.03 + Math.sin(u * Math.PI) * 0.035;
+        return new THREE.Vector3(
+          cx + Math.cos(ang + u * 2.2) * rad * 0.85,
+          cy - 0.01 - u * 0.07 + Math.sin(ang) * 0.01,
+          cz + Math.sin(ang + u) * rad * 0.55,
+        );
+      },
+      0.08,
+      0.0009,
+      0.5,
+      0.78,
+      0.35,
+    );
   }
 }
 
 function addFingers(wrist: THREE.Group, side: 1 | -1, material: THREE.Material) {
   const fingers: THREE.Group[] = [];
-  const specs = [
-    { x: -0.03 * side, z: 0.02, len: 0.052, rot: 0.5 * side },
-    { x: -0.012 * side, z: 0.016, len: 0.074, rot: 0.08 * side },
-    { x: 0.004 * side, z: 0.018, len: 0.082, rot: 0 },
-    { x: 0.018 * side, z: 0.014, len: 0.076, rot: -0.08 * side },
-    { x: 0.03 * side, z: 0.008, len: 0.062, rot: -0.16 * side },
-  ];
-  for (const spec of specs) {
+  for (const spec of FINGER_SPECS) {
     const finger = new THREE.Group();
-    finger.position.set(spec.x, -0.02, spec.z);
-    finger.rotation.z = spec.rot;
+    finger.position.set(spec.x * side, -0.02, spec.z);
+    finger.rotation.z = spec.rot * side;
     const seg = solid(finger, capsule(0.008, spec.len), material);
     seg.position.y = -spec.len * 0.45;
     wrist.add(finger);
@@ -294,7 +638,7 @@ export function createKushim(): Rig {
   const root = new THREE.Group();
   const glass = glassMaterial(1, "glass");
   const bright = glassMaterial(1.8, "glass-bright");
-  const nerve = nerveMaterial(LOCK.strom, 0.34);
+  const nerve = nerveMaterial(LOCK.filament, 0.34);
   const signal = nerveMaterial(LOCK.signal, 0.2);
   const disposables: Array<THREE.BufferGeometry | THREE.Material | THREE.Texture> = [
     glass,
@@ -333,9 +677,6 @@ export function createKushim(): Rig {
   jaw.scale.set(0.92, 0.62, 0.85);
   jaw.userData.restX = jaw.rotation.x;
   jaw.userData.restY = jaw.position.y;
-  const nose = solid(head, capsule(0.012, 0.05), bright);
-  nose.position.set(0, -0.005, P.headRadius * 0.92);
-  nose.rotation.x = 0.4;
   const lips = solid(head, capsule(0.008, 0.045), glass);
   lips.position.set(0, -0.045, P.headRadius * 0.86);
   lips.rotation.z = Math.PI / 2;
@@ -343,11 +684,10 @@ export function createKushim(): Rig {
     const ear = solid(head, new THREE.SphereGeometry(0.028, 10, 8), glass);
     ear.position.set(side * 0.1, -0.01, 0);
     ear.scale.set(0.45, 1, 0.7);
-    const brow = solid(head, capsule(0.006, 0.04), bright);
-    brow.position.set(side * 0.032, 0.03, P.headRadius * 0.86);
-    brow.rotation.z = side * 0.4;
-    brow.rotation.y = side * -0.3;
   }
+  const headNerves = emptyRibbon();
+  fillHead(headNerves, P.headRadius);
+  commitRibbon(head, headNerves, nerve);
 
   const starTex = glowSprite("#ffffff", LOCK.strom, 10);
   const starMat = new THREE.SpriteMaterial({
@@ -403,53 +743,7 @@ export function createKushim(): Rig {
   disposables.push(browTex, forehead.material);
 
   const torsoNerves = emptyRibbon();
-  const spine: THREE.Vector3[] = [];
-  for (let i = 0; i <= 12; i++) {
-    const u = i / 12;
-    spine.push(new THREE.Vector3(0, -0.26 + u * 0.78, -0.02 + Math.sin(u * Math.PI) * 0.015));
-  }
-  addRibbon(torsoNerves, spine, 0.05, 0.01);
-  for (const side of [-1, 1]) {
-    const chain: THREE.Vector3[] = [];
-    for (let i = 0; i <= 10; i++) {
-      const u = i / 10;
-      chain.push(new THREE.Vector3(side * 0.028, -0.24 + u * 0.7, -0.03));
-    }
-    addRibbon(torsoNerves, chain, 0.2, 0.0035);
-    for (let rib = 0; rib < 8; rib++) {
-      const t = rib / 7;
-      const y = -0.02 + t * 0.28;
-      const reach = 0.09 + Math.sin(t * Math.PI) * 0.075;
-      const pts: THREE.Vector3[] = [];
-      for (let s = 0; s <= 8; s++) {
-        const u = s / 8;
-        pts.push(
-          new THREE.Vector3(
-            side * reach * Math.sin(u * Math.PI * 0.9),
-            y - u * 0.035,
-            -0.03 + u * 0.12,
-          ),
-        );
-      }
-      addRibbon(torsoNerves, pts, 0.15 + rib * 0.02, 0.0032);
-    }
-    const clavicle: THREE.Vector3[] = [];
-    for (let s = 0; s <= 6; s++) {
-      const u = s / 6;
-      clavicle.push(new THREE.Vector3(side * (0.02 + u * 0.18), 0.3 - u * 0.02, 0.07 - u * 0.04));
-    }
-    addRibbon(torsoNerves, clavicle, 0.1, 0.004);
-    const scapula = [
-      new THREE.Vector3(side * 0.06, 0.22, -0.08),
-      new THREE.Vector3(side * 0.16, 0.26, -0.07),
-      new THREE.Vector3(side * 0.12, 0.1, -0.07),
-      new THREE.Vector3(side * 0.06, 0.22, -0.08),
-    ];
-    addRibbon(torsoNerves, scapula, 0.55, 0.0028);
-  }
-  const sternum: THREE.Vector3[] = [];
-  for (let i = 0; i <= 6; i++) sternum.push(new THREE.Vector3(0, 0.02 + i * 0.045, 0.09));
-  addRibbon(torsoNerves, sternum, 0.08, 0.0045);
+  fillTorso(torsoNerves);
   commitRibbon(chest, torsoNerves, nerve);
 
   function makeArm(side: 1 | -1) {
@@ -461,11 +755,7 @@ export function createKushim(): Rig {
     const upperMesh = solid(shoulder, capsule(0.046, P.upperArm), glass);
     upperMesh.position.y = -P.upperArm / 2;
     const upperN = emptyRibbon();
-    alongBone(upperN, P.upperArm, [
-      { x: 0.01 * side, z: 0.012, rank: 0.12, width: 0.0036, seed: side },
-      { x: -0.012 * side, z: -0.006, rank: 0.4, width: 0.0026, seed: side * 2 },
-      { x: 0.0, z: 0.02, rank: 0.7, width: 0.0022, seed: side * 3 },
-    ]);
+    fillLimb(upperN, P.upperArm, 4, 0.028, 0.1, 0.00085, 0.62, side * 1.3, side);
     commitRibbon(shoulder, upperN, nerve);
 
     const elbow = new THREE.Group();
@@ -475,10 +765,7 @@ export function createKushim(): Rig {
     const foreMesh = solid(elbow, capsule(0.036, P.foreArm), glass);
     foreMesh.position.y = -P.foreArm / 2;
     const foreN = emptyRibbon();
-    alongBone(foreN, P.foreArm, [
-      { x: 0.008 * side, z: 0.01, rank: 0.18, width: 0.003, seed: 4 },
-      { x: -0.008 * side, z: -0.004, rank: 0.5, width: 0.0024, seed: 5 },
-    ]);
+    fillLimb(foreN, P.foreArm, 3, 0.02, 0.14, 0.0007, 0.5, side * 2.1, side);
     commitRibbon(elbow, foreN, nerve);
 
     const wrist = new THREE.Group();
@@ -490,15 +777,7 @@ export function createKushim(): Rig {
     palm.scale.set(0.85, 1.15, 0.42);
     const fingers = addFingers(wrist, side, glass);
     const handN = emptyRibbon();
-    for (let f = 0; f < 5; f++) {
-      const x = (-0.028 + f * 0.014) * side;
-      addRibbon(
-        handN,
-        [new THREE.Vector3(0, 0, 0.01), new THREE.Vector3(x, -0.085 - (f === 2 ? 0.01 : 0), 0.02)],
-        0.25 + f * 0.08,
-        0.0022,
-      );
-    }
+    fillHand(handN, side);
     commitRibbon(wrist, handN, nerve);
     return { shoulder, elbow, wrist, fingers };
   }
@@ -507,22 +786,8 @@ export function createKushim(): Rig {
   const right = makeArm(-1);
 
   const signalNerves = emptyRibbon();
-  for (let i = 0; i < 5; i++) {
-    const angle = (i / 5) * Math.PI * 2;
-    const pts: THREE.Vector3[] = [];
-    for (let s = 0; s <= 5; s++) {
-      const u = s / 5;
-      pts.push(
-        new THREE.Vector3(
-          Math.cos(angle) * 0.02 * u,
-          -0.04 - u * 0.08,
-          Math.sin(angle) * 0.02 * u + 0.02,
-        ),
-      );
-    }
-    addRibbon(signalNerves, pts, 0.02, 0.003);
-  }
-  commitRibbon(right.shoulder, signalNerves, signal);
+  fillHotspot(signalNerves);
+  commitRibbon(right.shoulder, signalNerves, signal, 6);
 
   const coreMat = new THREE.ShaderMaterial({
     transparent: true,
@@ -530,17 +795,18 @@ export function createKushim(): Rig {
     blending: THREE.AdditiveBlending,
     uniforms: {
       uColor: { value: new THREE.Color(LOCK.signal) },
-      uCore: { value: new THREE.Color("#ffd5d8") },
+      uCore: { value: new THREE.Color("#FFB15A") },
       uBoost: { value: 2.4 },
+      uShow: { value: 0 },
     },
     vertexShader: glassVert,
-    fragmentShader: glassFrag,
+    fragmentShader: coreFrag,
   });
   sealShaderChannels(coreMat, ["uColor", "uCore", "uBoost"]);
   markMaterial(coreMat, "core");
   disposables.push(coreMat);
-  const core = solid(right.shoulder, new THREE.SphereGeometry(0.045, 16, 12), coreMat);
-  core.position.set(-0.01, -0.05, 0.03);
+  const core = solid(right.shoulder, new THREE.SphereGeometry(0.01, 16, 12), coreMat);
+  core.position.set(-0.05, -0.042, 0.042);
   core.renderOrder = 4;
 
   const ringCount = 96;
@@ -565,7 +831,7 @@ export function createKushim(): Rig {
   sealLookColor(ringMat.color);
   markMaterial(ringMat, "ring");
   const ring = new THREE.Points(ringGeo, ringMat);
-  ring.position.set(0, -0.04, 0.02);
+  ring.position.set(-0.042, -0.04, 0.034);
   ring.frustumCulled = false;
   ring.renderOrder = 5;
   right.shoulder.add(ring);
@@ -581,22 +847,22 @@ export function createKushim(): Rig {
     const thighMesh = solid(hip, capsule(0.068, P.thigh), glass);
     thighMesh.position.y = -P.thigh / 2;
     const hipN = emptyRibbon();
-    alongBone(hipN, P.thigh, [
-      { x: 0.01 * side, z: 0.015, rank: 0.1, width: 0.0034, seed: side * 6 },
-      { x: -0.016 * side, z: -0.01, rank: 0.45, width: 0.0024, seed: 7 },
-    ]);
-    const crest: THREE.Vector3[] = [];
-    for (let s = 0; s <= 6; s++) {
-      const u = s / 6;
-      crest.push(
+    fillLimb(hipN, P.thigh, 4, 0.038, 0.08, 0.0009, 0.66, side * 2.4, side);
+    pushCurve(
+      hipN,
+      7,
+      (u) =>
         new THREE.Vector3(
           side * (0.02 + u * 0.1),
-          0.02 + Math.sin(u * Math.PI) * 0.02,
+          0.02 + Math.sin(u * Math.PI) * 0.018,
           -0.02 + u * 0.04,
         ),
-      );
-    }
-    addRibbon(hipN, crest, 0.3, 0.003);
+      0.26,
+      0.0004,
+      0.55,
+      0.16,
+      0.2,
+    );
     commitRibbon(hip, hipN, nerve);
 
     const knee = new THREE.Group();
@@ -608,10 +874,7 @@ export function createKushim(): Rig {
     const shinMesh = solid(knee, capsule(0.046, P.shin), glass);
     shinMesh.position.y = -P.shin / 2;
     const shinN = emptyRibbon();
-    alongBone(shinN, P.shin, [
-      { x: 0.008 * side, z: 0.01, rank: 0.16, width: 0.0028, seed: 8 },
-      { x: -0.006 * side, z: -0.008, rank: 0.6, width: 0.0022, seed: 9 },
-    ]);
+    fillLimb(shinN, P.shin, 3, 0.024, 0.12, 0.00072, 0.5, 3.1 + side, side);
     commitRibbon(knee, shinN, nerve);
 
     const ankle = new THREE.Group();
@@ -630,14 +893,7 @@ export function createKushim(): Rig {
       toe.position.set((t - 2) * 0.014 * side, -0.02, 0.145);
     }
     const footN = emptyRibbon();
-    for (let t = 0; t < 5; t++) {
-      addRibbon(
-        footN,
-        [new THREE.Vector3(0, -0.01, 0.02), new THREE.Vector3((t - 2) * 0.014 * side, -0.02, 0.16)],
-        0.35 + t * 0.08,
-        0.002,
-      );
-    }
+    fillFoot(footN, side);
     commitRibbon(foot, footN, nerve);
   }
 
@@ -650,7 +906,7 @@ export function createKushim(): Rig {
     const a = (i / 16) * Math.PI * 2;
     ringPts.push(new THREE.Vector3(Math.cos(a) * 0.13, P.hipY + 0.02, Math.sin(a) * 0.08));
   }
-  addRibbon(pelvis, ringPts, 0.12, 0.0036);
+  addRibbon(pelvis, ringPts, 0.12, 0.00048, 0.62, 0.18, 0);
   commitRibbon(root, pelvis, nerve);
 
   root.traverse((obj: THREE.Object3D) => {

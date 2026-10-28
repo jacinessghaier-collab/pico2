@@ -5,6 +5,9 @@ export const LOCK = {
   strom: "#3AD7FF",
   kern: "#E7FBFF",
   signal: "#FF3B4E",
+  /** Inner muscle and nerve mesh. The glass shell stays strom. */
+  filament: "#D4F04A",
+  filamentKern: "#F7FFC2",
   proportions: {
     hipY: 0.96,
     chestY: 1.22,
