@@ -1,13 +1,35 @@
 /** Visual lock. Hourly passes may not change these values. */
 
 export const LOCK = {
-  void: "#02060A",
+  void: "#000000",
   strom: "#3AD7FF",
   kern: "#E7FBFF",
   signal: "#FF3B4E",
   /** Inner muscle and nerve mesh. The glass shell stays strom. */
   filament: "#D4F04A",
   filamentKern: "#F7FFC2",
+  /** Shell only. Filament colors stay on the keys above. */
+  glass: {
+    fill: 0.004,
+    rim: 0.95,
+    rimPower: 4.2,
+    spine: 0.08,
+    spineTight: 110,
+    star: 0.04,
+    starTight: 160,
+    sprite: 0.04,
+  },
+  aura: {
+    count: 112,
+    opacity: 0.14,
+    size: 0.2,
+  },
+  ground: {
+    opacity: 0.2,
+    y: 0.012,
+    z: 0.05,
+    radius: 0.34,
+  },
   proportions: {
     hipY: 0.96,
     chestY: 1.22,

@@ -50,17 +50,28 @@ const glassFrag = /* glsl */ `
 uniform vec3 uColor;
 uniform vec3 uCore;
 uniform float uBoost;
+uniform float uFill;
+uniform float uRim;
+uniform float uRimPower;
+uniform float uSpine;
+uniform float uSpineTight;
+uniform float uStar;
+uniform float uStarTight;
 varying vec3 vN;
 varying vec3 vW;
 void main() {
   vec3 viewDir = normalize(cameraPosition - vW);
-  float fres = pow(1.0 - abs(dot(normalize(vN), viewDir)), 2.35);
-  float spine = exp(-abs(vW.x) * 14.0) * smoothstep(0.35, 1.15, vW.y) * smoothstep(1.75, 1.35, vW.y);
-  vec3 chest = vW - vec3(0.0, 1.34, 0.06);
-  float star = exp(-dot(chest, chest) * 18.0);
-  float alpha = fres * 0.95 * uBoost + 0.07 * uBoost + spine * 0.55 + star * 0.7;
-  if (alpha < 0.015) discard;
-  gl_FragColor = vec4(mix(uColor, uCore, fres), alpha);
+  float ndv = abs(dot(normalize(vN), viewDir));
+  float fres = pow(clamp(1.0 - ndv, 0.0, 1.0), uRimPower);
+  float spine = exp(-abs(vW.x) * uSpineTight)
+    * smoothstep(0.62, 1.04, vW.y)
+    * smoothstep(1.54, 1.26, vW.y);
+  vec3 chest = vW - vec3(0.0, 1.32, 0.04);
+  float star = exp(-dot(chest, chest) * uStarTight);
+  float alpha = fres * uRim * uBoost + uFill * uBoost + spine * uSpine + star * uStar;
+  if (alpha < 0.012) discard;
+  vec3 col = mix(uColor, uCore, clamp(fres * 0.38 + spine * 0.18, 0.0, 1.0));
+  gl_FragColor = vec4(col, alpha);
 }
 `;
 
@@ -225,6 +236,7 @@ function commitRibbon(
 }
 
 function glassMaterial(boost: number, role: "glass" | "glass-bright") {
+  const shell = LOCK.glass;
   const material = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -234,11 +246,29 @@ function glassMaterial(boost: number, role: "glass" | "glass-bright") {
       uColor: { value: new THREE.Color(LOCK.strom) },
       uCore: { value: new THREE.Color(LOCK.kern) },
       uBoost: { value: boost },
+      uFill: { value: shell.fill },
+      uRim: { value: shell.rim },
+      uRimPower: { value: shell.rimPower },
+      uSpine: { value: shell.spine },
+      uSpineTight: { value: shell.spineTight },
+      uStar: { value: shell.star },
+      uStarTight: { value: shell.starTight },
     },
     vertexShader: glassVert,
     fragmentShader: glassFrag,
   });
-  sealShaderChannels(material, ["uColor", "uCore", "uBoost"]);
+  sealShaderChannels(material, [
+    "uColor",
+    "uCore",
+    "uBoost",
+    "uFill",
+    "uRim",
+    "uRimPower",
+    "uSpine",
+    "uSpineTight",
+    "uStar",
+    "uStarTight",
+  ]);
   markMaterial(material, role);
   return material;
 }
@@ -309,6 +339,115 @@ function glowSprite(inner: string, outer: string, spikes: number) {
   tex.colorSpace = THREE.SRGBColorSpace;
   markTint(tex, inner, outer);
   return tex;
+}
+
+function softDisc() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d");
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  if (!ctx) return tex;
+  const grd = ctx.createRadialGradient(32, 32, 0, 32, 32, 31);
+  grd.addColorStop(0, "rgba(255,255,255,0.85)");
+  grd.addColorStop(0.4, "rgba(255,255,255,0.22)");
+  grd.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, 64, 64);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function silhouetteHalf(y: number) {
+  if (y > 1.66) return 0.11;
+  if (y > 1.5) return 0.14;
+  if (y > 1.4) return 0.08;
+  if (y > 0.8) return 0.28;
+  return y > 0.45 ? 0.17 : 0.13;
+}
+
+const groundVert = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+const groundFrag = /* glsl */ `
+uniform vec3 uColor;
+uniform float uOpacity;
+varying vec2 vUv;
+void main() {
+  vec2 p = vUv * 2.0 - 1.0;
+  float d = length(p);
+  float alpha = exp(-d * d * 2.4) * uOpacity * smoothstep(1.02, 0.5, d);
+  if (alpha < 0.008) discard;
+  gl_FragColor = vec4(uColor, alpha);
+}
+`;
+
+function addShellLight(
+  root: THREE.Object3D,
+  disposables: Array<THREE.BufferGeometry | THREE.Material | THREE.Texture>,
+) {
+  const spec = LOCK.aura;
+  const positions = new Float32Array(spec.count * 3);
+  const steps = spec.count / 2;
+  for (let i = 0; i < spec.count; i++) {
+    const side = i % 2 === 0 ? 1 : -1;
+    const t = Math.floor(i / 2) / Math.max(1, steps - 1);
+    const y = 0.04 + t * 1.74;
+    const edge = silhouetteHalf(y) * (1.035 + ((i * 5) % 3) * 0.008);
+    positions[i * 3] = side * edge;
+    positions[i * 3 + 1] = y;
+    positions[i * 3 + 2] = (((i * 13) % 7) - 3) * 0.006;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const tex = softDisc();
+  const mat = new THREE.PointsMaterial({
+    color: LOCK.strom,
+    map: tex,
+    size: spec.size,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    opacity: spec.opacity,
+    sizeAttenuation: true,
+  });
+  sealLookColor(mat.color);
+  markMaterial(mat, "aura");
+  const points = new THREE.Points(geo, mat);
+  points.frustumCulled = false;
+  points.renderOrder = 0;
+  points.userData.lockKey = "aura";
+  root.add(points);
+  disposables.push(tex, mat);
+
+  const pool = LOCK.ground;
+  const groundMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    uniforms: {
+      uColor: { value: new THREE.Color(LOCK.strom) },
+      uOpacity: { value: pool.opacity },
+    },
+    vertexShader: groundVert,
+    fragmentShader: groundFrag,
+  });
+  sealShaderChannels(groundMat, ["uColor", "uOpacity"]);
+  markMaterial(groundMat, "ground");
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(pool.radius, 48), groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.set(0, pool.y, pool.z);
+  ground.renderOrder = 0;
+  ground.userData.lockKey = "ground";
+  root.add(ground);
+  disposables.push(groundMat);
 }
 
 function pushCurve(
@@ -689,7 +828,7 @@ export function createKushim(): Rig {
   fillHead(headNerves, P.headRadius);
   commitRibbon(head, headNerves, nerve);
 
-  const starTex = glowSprite("#ffffff", LOCK.strom, 10);
+  const starTex = glowSprite("#ffffff", LOCK.strom, 0);
   const starMat = new THREE.SpriteMaterial({
     map: starTex,
     blending: THREE.AdditiveBlending,
@@ -699,8 +838,9 @@ export function createKushim(): Rig {
   sealLookColor(starMat.color);
   markMaterial(starMat, "sprite");
   const star = new THREE.Sprite(starMat);
+  star.userData.lockKey = "chest-core";
   star.position.set(0, 0.14, 0.1);
-  star.scale.set(0.36, 0.36, 1);
+  star.scale.set(LOCK.glass.sprite, LOCK.glass.sprite, 1);
   star.renderOrder = 3;
   chest.add(star);
   disposables.push(starTex, star.material);
@@ -908,6 +1048,7 @@ export function createKushim(): Rig {
   }
   addRibbon(pelvis, ringPts, 0.12, 0.00048, 0.62, 0.18, 0);
   commitRibbon(root, pelvis, nerve);
+  addShellLight(root, disposables);
 
   root.traverse((obj: THREE.Object3D) => {
     const mesh = obj as THREE.Mesh;
