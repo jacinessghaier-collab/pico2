@@ -88,10 +88,40 @@ describe("lathe shell", () => {
       });
       assert.ok(belly > 20);
       const width = maxX - minX;
-      assert.ok(width < 0.135, `frontal width ${width} is still the spindle`);
+      // Same x scale as #29. The finer calf ring lands on the lateral peak.
+      assert.ok(width < 0.136, `frontal width ${width} is still the spindle`);
       assert.ok(width > 0.09, `frontal width ${width} collapsed`);
       assert.ok(head < -0.1, `posterior belly ${head} flattened`);
       assert.ok(cleft > head + 0.012, `cleft ${cleft} does not sit in front of the head ${head}`);
+    }
+  });
+
+  it("cuts a narrow sulcus between the gastrocnemius heads", () => {
+    const hips = rig.root.children.filter((child) => child.userData.lockKey === "hip");
+    for (const hip of hips) {
+      const kneeJoint = hip.children.find((child) => child.userData.lockKey === "knee");
+      if (!kneeJoint) throw new Error("knee missing");
+      const geo = tubeOn(kneeJoint);
+      let floorFront = -Infinity;
+      let floorBack = Infinity;
+      let plateau = Infinity;
+      let samples = 0;
+      scan(geo, (x, y, z) => {
+        const t = (0.14 - y) / (0.14 + LOCK.proportions.shin);
+        if (t < 0.52 || t > 0.58 || z >= 0) return;
+        samples += 1;
+        if (Math.abs(x) < 0.004) {
+          floorFront = Math.max(floorFront, z);
+          floorBack = Math.min(floorBack, z);
+        }
+        // Inner slope of each head. A wide valley lifts this station forward.
+        if (Math.abs(x) > 0.02 && Math.abs(x) < 0.03) plateau = Math.min(plateau, z);
+      });
+      assert.ok(samples > 20);
+      assert.ok(floorFront < -0.02, `sulcus floor ${floorFront} reaches the tibia`);
+      assert.ok(floorBack > -0.055, `sulcus floor ${floorBack} filled back in`);
+      assert.ok(plateau < -0.092, `inner head ${plateau} is still the soft valley`);
+      assert.ok(floorBack > plateau + 0.05, `sulcus relief ${floorBack - plateau} is too shallow`);
     }
   });
 });

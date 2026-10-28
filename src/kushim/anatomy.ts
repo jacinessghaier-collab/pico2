@@ -442,8 +442,10 @@ function upperSection(t: number, a: number, r: number) {
 /**
  * Calf cross-section. Two gastrocnemius heads sit behind a flat tibia:
  * the lateral head higher, the medial head lower and fuller, with a
- * groove between them. The frontal width is inside the old spindle.
+ * sulcus between them. The frontal width is inside the old spindle.
  * The posterior belly stays, so the side view keeps the gut.
+ * The sulcus is a narrow cut. A wide gaussian lifts the inner slopes
+ * and the pair reads as one soft valley from the side.
  */
 function shinSection(t: number, a: number, r: number, side: 1 | -1) {
   const s = Math.sin(a);
@@ -459,7 +461,11 @@ function shinSection(t: number, a: number, r: number, side: 1 | -1) {
   const live = hermite(0.14, 0.32, t) * (1 - hermite(0.78, 0.94, t));
   const lat = Math.exp(-((outward - 0.78) ** 2) / 0.05) * back;
   const med = Math.exp(-((outward + 0.82) ** 2) / 0.045) * back;
-  const groove = Math.exp(-(outward * outward) / 0.16) * back;
+  // Dies before either head (peaks near ±0.8). Shorter than the old
+  // /0.16 gaussian, which lifted the inner slopes into one soft valley.
+  // Depth stays a sulcus: the floor does not reach the tibia.
+  const span = Math.min(1, Math.abs(outward) / 0.36);
+  const groove = (span >= 1 ? 0 : Math.cos(span * Math.PI * 0.5) ** 2) * back;
   const xScale = 0.84 - 0.1 * Math.exp(-((t - 0.55) ** 2) / 0.03);
   const x =
     c * r * xScale + side * lat * latT * live * r * 0.9 - side * med * medT * live * r * 0.62;
@@ -470,7 +476,7 @@ function shinSection(t: number, a: number, r: number, side: 1 | -1) {
     zBack -
     lat * latT * live * r * 1.0 -
     med * medT * live * r * 1.2 +
-    groove * Math.max(latT, medT) * live * mass * r * 1.15;
+    groove * Math.max(latT, medT) * live * mass * r * 1.2;
   return { x, z };
 }
 
@@ -2324,7 +2330,7 @@ export function createKushim(): Rig {
       knee,
       organicTube(SHIN_RADII, P.shin, side, 0, BLEND.knee, 0.035, {
         join: "child",
-        seg: 36,
+        seg: 56,
         section: (t, a, r) => shinSection(t, a, r, side),
       }),
       glass,
