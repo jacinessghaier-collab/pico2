@@ -468,6 +468,47 @@ function pushCurve(
   addRibbon(ribbon, pts, rank, width, gain, warm, taper);
 }
 
+function unitHash(n: number) {
+  const x = Math.sin(n * 127.1 + 311.7) * 43758.5453123;
+  return x - Math.floor(x);
+}
+
+/** Bowed chord. Bend is perpendicular in the front plane so a run is not a ruler. */
+function arcBetween(
+  ribbon: Ribbon,
+  ax: number,
+  ay: number,
+  az: number,
+  bx: number,
+  by: number,
+  bz: number,
+  bend: number,
+  rank: number,
+  width: number,
+  gain: number,
+  warm: number,
+) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len = Math.hypot(dx, dy);
+  if (len < 0.004) return;
+  const px = (-dy / len) * bend;
+  const py = (dx / len) * bend;
+  pushCurve(
+    ribbon,
+    5,
+    (u) => {
+      const o = Math.sin(u * Math.PI);
+      return new THREE.Vector3(ax + dx * u + px * o, ay + dy * u + py * o, az + (bz - az) * u);
+    },
+    Math.min(0.82, Math.max(0.02, rank)),
+    width,
+    gain,
+    warm,
+    0.3,
+  );
+}
+
 const TORSO_PROFILE: Array<[number, number]> = [
   [0.055, -0.3],
   [0.12, -0.24],
@@ -495,61 +536,177 @@ function torsoRadius(y: number) {
 }
 
 function fillTorso(ribbon: Ribbon) {
-  // Separate hairlines in lanes. Ranks stay under the idle filament gate (0.86).
-  const longs = 22;
-  for (let i = 0; i < longs; i++) {
-    const lane = i / (longs - 1) - 0.5;
-    const z = ((i % 4) - 1.5) * 0.01;
-    pushCurve(
+  // Branching web. Ranks stay under the idle filament gate (0.86).
+  // The sternum is a crossing plexus, not a stack of vertical hairlines,
+  // so the chest beam sits in yellow-green fill.
+  const hair = 0.00013;
+  let seed = 11;
+  const h = () => unitHash(seed++);
+  const clampX = (x: number, y: number) => {
+    const rad = torsoRadius(y) * 0.96;
+    return Math.max(-rad, Math.min(rad, x));
+  };
+
+  const trunks: Array<Array<[number, number, number]>> = [];
+  for (const side of [-1, 1] as const) {
+    trunks.push([
+      [side * 0.018, -0.28, 0],
+      [side * 0.07, -0.16, 0.012],
+      [side * 0.112, -0.02, -0.01],
+      [side * 0.07, 0.1, 0.018],
+      [side * 0.12, 0.2, 0],
+      [side * 0.155, 0.3, 0.01],
+    ]);
+    trunks.push([
+      [side * 0.012, -0.22, -0.016],
+      [side * 0.048, -0.08, 0.016],
+      [side * 0.028, 0.05, 0.008],
+      [side * 0.062, 0.16, -0.012],
+      [side * 0.034, 0.28, 0.014],
+      [side * 0.016, 0.39, 0],
+    ]);
+  }
+  trunks.push([
+    [-0.022, -0.26, 0.02],
+    [0.028, -0.12, -0.012],
+    [-0.034, 0.0, 0.02],
+    [0.02, 0.12, 0.028],
+    [-0.018, 0.24, 0.01],
+    [0.012, 0.37, 0],
+  ]);
+
+  for (let p = 0; p < trunks.length; p++) {
+    const path = trunks[p];
+    for (let i = 0; i < path.length - 1; i++) {
+      const [x, y, z] = path[i];
+      const [x2, y2, z2] = path[i + 1];
+      const jx = (h() - 0.5) * 0.014;
+      const jy = (h() - 0.5) * 0.01;
+      const ex = clampX(x2 + jx, y2 + jy);
+      const ey = y2 + jy;
+      arcBetween(ribbon, x, y, z, ex, ey, z2, (h() - 0.5) * 0.03, 0.05 + i * 0.02, hair, 0.48, 0.44);
+      if (i === 0) continue;
+      const side = ex >= 0 ? 1 : -1;
+      const inward = i % 2 === 0 ? -side : side;
+      const len = 0.032 + h() * 0.05;
+      const fy = ey + (h() - 0.4) * 0.05;
+      const fx = clampX(ex + inward * len, fy);
+      arcBetween(
+        ribbon,
+        ex,
+        ey,
+        z2,
+        fx,
+        fy,
+        z2 + (h() - 0.5) * 0.02,
+        (h() - 0.5) * 0.02,
+        0.12 + (i % 4) * 0.03,
+        hair * 0.9,
+        0.4,
+        0.5,
+      );
+      if (ey > -0.08 && ey < 0.26) {
+        const tx = clampX(fx + -Math.sign(fx || side) * (0.018 + h() * 0.04), fy + 0.028);
+        arcBetween(
+          ribbon,
+          fx,
+          fy,
+          z2,
+          tx,
+          fy + 0.02 + h() * 0.03,
+          z2 + (h() - 0.5) * 0.016,
+          (h() - 0.5) * 0.016,
+          0.08 + (p % 5) * 0.02,
+          hair,
+          0.55,
+          0.58,
+        );
+      }
+    }
+  }
+
+  for (let i = 0; i < 128; i++) {
+    const sternum = i < 56;
+    const y = sternum ? 0.0 + h() * 0.22 : -0.24 + h() * 0.5;
+    const x = (h() - 0.5) * (sternum ? 0.1 : 0.16);
+    const ang = (h() - 0.5) * Math.PI * (sternum ? 0.85 : 1);
+    const len = (sternum ? 0.03 : 0.024) + h() * 0.04;
+    const y2 = y + Math.sin(ang) * len;
+    const x2 = clampX(x + Math.cos(ang) * len, y2);
+    const z = (h() - 0.5) * (sternum ? 0.04 : 0.05);
+    const chest = sternum || (Math.abs(x) < 0.05 && y > -0.04 && y < 0.24);
+    arcBetween(
       ribbon,
-      24,
-      (u) => {
-        const y = -0.3 + u * 0.7;
-        const reach = torsoRadius(y) * 1.35;
-        const drift = Math.sin(u * Math.PI * 1.15 + i * 0.9) * 0.0035;
-        return new THREE.Vector3(lane * reach + drift, y, z + Math.sin(u * 2.2 + i) * 0.005);
-      },
-      0.04 + (i % 8) * 0.035,
-      0.00013,
-      0.58,
-      0.42,
-      0.08,
+      x,
+      y,
+      z,
+      x2,
+      y2,
+      z + (h() - 0.5) * 0.018,
+      (h() - 0.5) * 0.014,
+      0.04 + (i % 8) * 0.02,
+      chest ? 0.0003 : hair * 0.9,
+      chest ? 0.46 + h() * 0.12 : 0.28,
+      chest ? 0.52 + h() * 0.1 : 0.36,
+    );
+  }
+
+  for (let i = 0; i < 9; i++) {
+    const y = -0.22 + i * 0.058;
+    const rad = torsoRadius(y) * (0.42 + h() * 0.28);
+    const rise = (h() - 0.45) * 0.04;
+    arcBetween(
+      ribbon,
+      -rad,
+      y,
+      (h() - 0.5) * 0.02,
+      rad * (0.55 + h() * 0.4),
+      y + rise,
+      (h() - 0.5) * 0.02,
+      (h() - 0.5) * 0.035,
+      0.18 + (i % 4) * 0.04,
+      hair * 0.85,
+      0.28,
+      0.34,
     );
   }
 
   for (const side of [-1, 1] as const) {
-    for (let n = 0; n < 5; n++) {
-      const y0 = -0.2 + n * 0.09;
-      pushCurve(
+    for (let i = 0; i < 4; i++) {
+      const y = 0.16 + h() * 0.1;
+      const x = side * (0.04 + h() * 0.05);
+      arcBetween(
         ribbon,
-        8,
-        (u) => {
-          const y = y0 + u * 0.05;
-          const reach = torsoRadius(y) * (0.25 + u * 0.7);
-          return new THREE.Vector3(side * reach, y + Math.sin(u * Math.PI) * 0.008, 0.01);
-        },
-        0.2 + n * 0.04,
-        0.0001,
-        0.22,
-        0.3,
-        0.2,
+        x,
+        y,
+        0.01,
+        clampX(side * (0.12 + h() * 0.04), y + 0.08),
+        0.26 + h() * 0.06,
+        0.012,
+        side * (0.01 + h() * 0.012),
+        0.14 + i * 0.04,
+        hair * 0.9,
+        0.36,
+        0.42,
       );
     }
-  }
-
-  for (let i = 0; i < 5; i++) {
-    const x = (i / 4 - 0.5) * 0.07;
-    pushCurve(
-      ribbon,
-      8,
-      (u) =>
-        new THREE.Vector3(x + Math.sin(u * 2 + i) * 0.003, 0.28 + u * 0.1, ((i % 3) - 1) * 0.008),
-      0.14 + (i % 3) * 0.04,
-      0.0001,
-      0.16,
-      0.24,
-      0.25,
-    );
+    for (let i = 0; i < 4; i++) {
+      const x = side * (0.004 + h() * 0.03);
+      arcBetween(
+        ribbon,
+        x,
+        0.24 + h() * 0.04,
+        (h() - 0.5) * 0.016,
+        x + side * (h() - 0.2) * 0.02,
+        0.36 + h() * 0.05,
+        (h() - 0.5) * 0.012,
+        (h() - 0.5) * 0.01,
+        0.1 + i * 0.03,
+        hair * 0.8,
+        0.3,
+        0.4,
+      );
+    }
   }
 }
 
@@ -564,28 +721,53 @@ function fillLimb(
   seed: number,
   side: number,
 ) {
-  const lanes = Math.max(1, count - 1);
-  for (let i = 0; i < count; i++) {
-    const lane = (i / lanes - 0.5) * radius * 2;
-    const depth = ((i % 3) - 1) * radius * 0.28;
+  // Long hairlines along the bone. A fork peels off and keeps going;
+  // it does not double back into a knot. Everything stays inside the glass.
+  let n = Math.round(seed * 19 + length * 80 + count);
+  const h = () => unitHash(n++);
+  const inset = radius * 0.48;
+  const strands = count >= 16 ? 4 : 3;
+  for (let s = 0; s < strands; s++) {
+    const lane = (s - (strands - 1) / 2) * inset * 0.62;
+    const depth = ((s % 2) - 0.5) * inset * 0.4;
+    const forkAt = s < 2 ? 0 : 0.18 + (s - 2) * 0.16;
+    const peel = (s - (strands - 1) / 2) * inset * 0.28;
     pushCurve(
       ribbon,
       16,
       (u) => {
-        const drift = Math.sin(u * Math.PI * 1.1 + seed + i) * radius * 0.045;
+        const t = forkAt + (1 - forkAt) * u;
+        const drift = Math.sin(t * Math.PI * 1.35 + seed + s * 1.7) * inset * 0.16;
+        const open = Math.sin(u * Math.PI) * peel;
         return new THREE.Vector3(
-          lane + drift + side * 0.001,
-          -u * length,
-          depth + Math.sin(u * Math.PI * 0.7 + i) * radius * 0.06,
+          lane + drift + open + side * 0.001,
+          -t * length,
+          depth + Math.sin(t * Math.PI * 0.8 + s) * inset * 0.1,
         );
       },
-      Math.min(0.8, rank + (i / count) * 0.08),
+      Math.min(0.8, rank + s * 0.04),
       width,
-      gain,
-      0.4,
+      s < 2 ? gain : gain * 0.62,
+      0.38,
       0.12,
     );
   }
+  const crossZ = (h() - 0.5) * inset * 0.15;
+  pushCurve(
+    ribbon,
+    12,
+    (u) =>
+      new THREE.Vector3(
+        (u - 0.5) * inset * 0.9 + Math.sin(u * Math.PI) * inset * 0.08,
+        -(0.08 + u * 0.84) * length,
+        crossZ,
+      ),
+    Math.min(0.78, rank + 0.12),
+    width * 0.75,
+    gain * 0.4,
+    0.3,
+    0.2,
+  );
 }
 
 const FINGER_SPECS = [
@@ -668,52 +850,66 @@ function fillHead(ribbon: Ribbon, radius: number) {
   const ry = radius * 1.16;
   const rx = radius;
   const rz = radius * 1.02;
-  // Short interior wisps. No front midline, no eye or brow traces.
-  for (let i = 0; i < 16; i++) {
-    const phi = (i / 16) * Math.PI * 2 + 0.4;
-    const lift = 0.28 + (i % 5) * 0.07;
-    const theta0 = 0.45 + (i % 4) * 0.18;
+  let seed = 700;
+  const h = () => unitHash(seed++);
+
+  const wisp = (
+    theta0: number,
+    dTheta: number,
+    phi: number,
+    lift: number,
+    gain: number,
+    width: number,
+    rank: number,
+  ) => {
     pushCurve(
       ribbon,
-      7,
+      5,
       (u) => {
-        const theta = theta0 + u * 0.5;
-        const wob = Math.sin(u * Math.PI + i * 0.7) * 0.2;
+        const theta = theta0 + dTheta * u;
+        const wob = Math.sin(u * Math.PI) * 0.22;
+        const L = lift * (0.94 + u * 0.08);
         return new THREE.Vector3(
-          Math.sin(theta) * Math.cos(phi + wob) * rx * lift,
-          Math.cos(theta) * ry * lift * 0.92,
-          Math.sin(theta) * Math.sin(phi + wob) * rz * lift,
+          Math.sin(theta) * Math.cos(phi + wob) * rx * L,
+          Math.cos(theta) * ry * L,
+          Math.sin(theta) * Math.sin(phi + wob) * rz * L,
         );
       },
-      0.1 + (i % 5) * 0.05,
-      0.00014,
-      0.36,
-      0.4,
-      0.05,
+      Math.min(0.8, rank),
+      width,
+      gain,
+      0.5,
+      0.06,
     );
+  };
+
+  // Quiet crown so the oval is not bare above the ears. No brow arc, no spark.
+  for (let ring = 0; ring < 4; ring++) {
+    const theta = 0.38 + ring * 0.28;
+    for (let a = 0; a < 8; a++) {
+      const phi = (a / 8) * Math.PI * 2 + ring * 0.41 + (h() - 0.5) * 0.2;
+      wisp(theta, 0.16, phi, 0.6 + h() * 0.22, 0.09, 0.00065, 0.22 + ring * 0.03);
+    }
   }
-  for (let i = 0; i < 14; i++) {
-    const phi = (i / 14) * Math.PI * 2 + 0.15;
-    const lift = 0.32 + (i % 4) * 0.08;
-    const theta0 = 0.85 + (i % 5) * 0.12;
-    pushCurve(
-      ribbon,
-      6,
-      (u) => {
-        const theta = theta0 + u * 0.42;
-        const wob = Math.sin(u * Math.PI + i) * 0.25;
-        return new THREE.Vector3(
-          Math.sin(theta) * Math.cos(phi + wob) * rx * lift,
-          Math.cos(theta) * ry * lift,
-          Math.sin(theta) * Math.sin(phi + wob) * rz * lift,
-        );
-      },
-      0.18 + (i % 4) * 0.04,
-      0.00012,
-      0.3,
-      0.36,
-      0.04,
-    );
+
+  // Lower half of the oval: interior haze, stronger than the crown, still inside the skull.
+  // No shell on the glass, and front-center stays dim so it cannot read as a face.
+  for (let ring = 0; ring < 6; ring++) {
+    const theta = 1.55 + (ring / 5) * 1.05;
+    for (let a = 0; a < 10; a++) {
+      const phi = (a / 10) * Math.PI * 2 + ring * 0.37 + (h() - 0.5) * 0.2;
+      const face = Math.abs(Math.cos(phi)) < 0.3 && Math.sin(phi) > 0.72 && theta < 2.05;
+      const lift = face ? 0.42 + h() * 0.06 : 0.5 + h() * 0.22;
+      wisp(
+        theta,
+        0.22,
+        phi,
+        Math.min(0.74, lift),
+        face ? 0.06 : 0.1 + (ring > 2 ? 0.03 : 0),
+        0.00048,
+        0.06 + (ring % 4) * 0.03,
+      );
+    }
   }
 }
 
@@ -1001,9 +1197,9 @@ export function createKushim(): Rig {
       7,
       (u) =>
         new THREE.Vector3(
-          side * (0.02 + u * 0.1),
-          0.02 + Math.sin(u * Math.PI) * 0.018,
-          -0.02 + u * 0.04,
+          side * (0.008 + u * 0.036),
+          0.01 + Math.sin(u * Math.PI) * 0.01,
+          -0.01 + u * 0.02,
         ),
       0.26,
       0.0002,
@@ -1050,23 +1246,39 @@ export function createKushim(): Rig {
 
   const pelvis = emptyRibbon();
   for (const side of [-1, 1] as const) {
-    for (let n = 0; n < 4; n++) {
-      const y = P.hipY + 0.01 + n * 0.012;
-      pushCurve(
+    for (let n = 0; n < 5; n++) {
+      const y0 = P.hipY - 0.012 + n * 0.012;
+      const y1 = y0 + 0.018 + (n % 2) * 0.016;
+      arcBetween(
         pelvis,
-        8,
-        (u) =>
-          new THREE.Vector3(
-            side * (0.02 + u * 0.1),
-            y + Math.sin(u * Math.PI) * 0.008,
-            -0.02 + u * 0.04,
-          ),
-        0.14 + n * 0.04,
+        side * 0.02,
+        y0,
+        -0.012,
+        side * (0.07 + (n % 3) * 0.022),
+        y1,
+        0.018,
+        side * 0.012,
+        0.12 + n * 0.04,
         0.00012,
-        0.32,
-        0.22,
-        0.15,
+        0.34,
+        0.3,
       );
+      if (n % 2 === 0) {
+        arcBetween(
+          pelvis,
+          side * 0.055,
+          y1,
+          0.01,
+          side * 0.018,
+          y1 + 0.028,
+          0.02,
+          -side * 0.01,
+          0.22,
+          0.00011,
+          0.28,
+          0.36,
+        );
+      }
     }
   }
   commitRibbon(root, pelvis, nerve);
