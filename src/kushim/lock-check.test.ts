@@ -80,7 +80,7 @@ describe("appearance lock table", () => {
     assert.equal(LOCK_CANON.aura.tight, 680);
     assert.equal(LOCK_CANON.ground.radius, 0.22);
     assert.equal(LOCK_CANON.ground.foot, 0.11);
-    assert.equal(LOCK_CANON.brightBoost, 0.42);
+    assert.equal(LOCK_CANON.brightBoost, 0);
     assert.equal(LOCK_CANON.strom, "#3AD7FF");
     assert.equal(LOCK_CANON.kern, "#E7FBFF");
     assert.equal(LOCK_CANON.signal, "#FF3B4E");

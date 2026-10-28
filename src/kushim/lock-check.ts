@@ -76,7 +76,7 @@ export const LOCK_CANON = {
   torsoScale: [1.05, 1, 0.72],
   skullScale: [1, 1.16, 1.02],
   glassBoost: 1,
-  brightBoost: 0.42,
+  brightBoost: 0,
   coreBoost: 2.4,
   nerveSpeed: 0.34,
   signalSpeed: 0.2,
@@ -703,7 +703,7 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
     }
   };
   expectCount("glass", 1);
-  expectCount("glass-bright", 1);
+  expectCount("glass-bright", 0);
   expectCount("nerve", 1);
   expectCount("signal", 1);
   expectCount("core", 1);
@@ -718,25 +718,6 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
   mustHex(colorSlot(rig.glass, "uCore"), LOCK_CANON.kern, "Glasfarbe Kern", "Glass core color");
   expectGlassLook(rig.glass, "Glas", "Glass", THREE.DoubleSide);
   expectShell(rig.glass, "Glas", "Glass");
-
-  const brightMats: THREE.ShaderMaterial[] = [];
-  rig.root.traverse((obj) => {
-    for (const material of materialsOf(obj)) {
-      if (roles.get(material) === "glass-bright") brightMats.push(material as THREE.ShaderMaterial);
-    }
-  });
-  const bright = brightMats[0];
-  if (!bright) breach("Helles Glas fehlt.", "Bright glass is missing.");
-  mustClose(
-    numberSlot(bright, "uBoost", true),
-    LOCK_CANON.brightBoost,
-    "Glanz-Boost",
-    "Bright boost",
-  );
-  mustHex(colorSlot(bright, "uColor"), LOCK_CANON.strom, "Glanzfarbe Strom", "Bright strom color");
-  mustHex(colorSlot(bright, "uCore"), LOCK_CANON.kern, "Glanzfarbe Kern", "Bright core color");
-  expectGlassLook(bright, "Glanz", "Bright glass", THREE.DoubleSide);
-  expectShell(bright, "Glanz", "Bright glass");
 
   mustHex(
     colorSlot(rig.nerve, "uColor"),

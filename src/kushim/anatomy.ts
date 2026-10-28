@@ -312,6 +312,11 @@ function capsule(radius: number, length: number) {
   return new THREE.CapsuleGeometry(radius, cyl, 4, 8);
 }
 
+/** Open tapered tube. No spherical caps, so a joint cannot read as a glass orb. */
+function limbTube(radiusTop: number, radiusBottom: number, length: number) {
+  return new THREE.CylinderGeometry(radiusTop, radiusBottom, length + 0.03, 14, 1, true);
+}
+
 function glowSprite(inner: string, outer: string, spikes: number) {
   const canvas = document.createElement("canvas");
   canvas.width = 128;
@@ -379,9 +384,9 @@ float smin(float a, float b, float k) {
 float torsoR(float y) {
   if (y < 0.98) return mix(0.062, 0.132, clamp((y - 0.92) / 0.06, 0.0, 1.0));
   if (y < 1.10) return mix(0.132, 0.162, clamp((y - 0.98) / 0.12, 0.0, 1.0));
-  if (y < 1.22) return mix(0.162, 0.138, clamp((y - 1.10) / 0.12, 0.0, 1.0));
-  if (y < 1.34) return mix(0.138, 0.164, clamp((y - 1.22) / 0.12, 0.0, 1.0));
-  if (y < 1.44) return mix(0.164, 0.190, clamp((y - 1.34) / 0.10, 0.0, 1.0));
+  if (y < 1.22) return mix(0.166, 0.110, clamp((y - 1.10) / 0.12, 0.0, 1.0));
+  if (y < 1.34) return mix(0.110, 0.163, clamp((y - 1.22) / 0.12, 0.0, 1.0));
+  if (y < 1.44) return mix(0.163, 0.210, clamp((y - 1.34) / 0.10, 0.0, 1.0));
   if (y < 1.52) return mix(0.190, 0.150, clamp((y - 1.44) / 0.08, 0.0, 1.0));
   return mix(0.150, 0.055, clamp((y - 1.52) / 0.10, 0.0, 1.0));
 }
@@ -398,18 +403,18 @@ float sdBody(vec2 p) {
   vec2 eL = vec2(0.240, 1.102);
   vec2 wL = vec2(0.271, 0.794);
   vec2 hL = vec2(0.285, 0.68);
-  d = smin(d, sdCapsule(p, sL, eL, 0.046), 0.035);
-  d = smin(d, sdCapsule(p, eL, wL, 0.036), 0.03);
-  d = smin(d, sdCapsule(p, wL, hL, 0.028), 0.025);
-  d = smin(d, sdCapsule(p, vec2(-0.20, 1.50), vec2(-0.240, 1.102), 0.046), 0.035);
-  d = smin(d, sdCapsule(p, vec2(-0.240, 1.102), vec2(-0.271, 0.794), 0.036), 0.03);
-  d = smin(d, sdCapsule(p, vec2(-0.271, 0.794), vec2(-0.285, 0.68), 0.028), 0.025);
-  d = smin(d, sdCapsule(p, vec2(0.11, 0.96), vec2(0.11, 0.50), 0.068), 0.04);
-  d = smin(d, sdCapsule(p, vec2(0.11, 0.50), vec2(0.11, 0.10), 0.046), 0.03);
-  d = smin(d, sdCapsule(p, vec2(0.11, 0.10), vec2(0.11, 0.04), 0.032), 0.025);
-  d = smin(d, sdCapsule(p, vec2(-0.11, 0.96), vec2(-0.11, 0.50), 0.068), 0.04);
-  d = smin(d, sdCapsule(p, vec2(-0.11, 0.50), vec2(-0.11, 0.10), 0.046), 0.03);
-  d = smin(d, sdCapsule(p, vec2(-0.11, 0.10), vec2(-0.11, 0.04), 0.032), 0.025);
+  d = smin(d, sdCapsule(p, sL, eL, 0.044), 0.03);
+  d = smin(d, sdCapsule(p, eL, wL, 0.03), 0.025);
+  d = smin(d, sdCapsule(p, wL, hL, 0.016), 0.02);
+  d = smin(d, sdCapsule(p, vec2(-0.20, 1.50), vec2(-0.240, 1.102), 0.044), 0.03);
+  d = smin(d, sdCapsule(p, vec2(-0.240, 1.102), vec2(-0.271, 0.794), 0.03), 0.025);
+  d = smin(d, sdCapsule(p, vec2(-0.271, 0.794), vec2(-0.285, 0.68), 0.016), 0.02);
+  d = smin(d, sdCapsule(p, vec2(0.11, 0.96), vec2(0.11, 0.50), 0.072), 0.035);
+  d = smin(d, sdCapsule(p, vec2(0.11, 0.50), vec2(0.11, 0.10), 0.04), 0.025);
+  d = smin(d, sdCapsule(p, vec2(0.11, 0.085), vec2(0.11, 0.05), 0.016), 0.02);
+  d = smin(d, sdCapsule(p, vec2(-0.11, 0.96), vec2(-0.11, 0.50), 0.072), 0.035);
+  d = smin(d, sdCapsule(p, vec2(-0.11, 0.50), vec2(-0.11, 0.10), 0.04), 0.025);
+  d = smin(d, sdCapsule(p, vec2(-0.11, 0.085), vec2(-0.11, 0.05), 0.016), 0.02);
   return d;
 }
 
@@ -1018,8 +1023,12 @@ function addFingers(wrist: THREE.Group, side: 1 | -1, material: THREE.Material) 
     const finger = new THREE.Group();
     finger.position.set(spec.x * side, -0.02, spec.z);
     finger.rotation.z = spec.rot * side;
-    const seg = solid(finger, capsule(0.008, spec.len), material);
-    seg.position.y = -spec.len * 0.45;
+    const seg = solid(
+      finger,
+      new THREE.CylinderGeometry(0.0055, 0.004, spec.len, 7, 1, true),
+      material,
+    );
+    seg.position.y = -spec.len * 0.5;
     wrist.add(finger);
     fingers.push(finger);
   }
@@ -1030,12 +1039,10 @@ export function createKushim(): Rig {
   const P = LOCK.proportions;
   const root = new THREE.Group();
   const glass = glassMaterial(1, "glass");
-  const bright = glassMaterial(0.42, "glass-bright");
   const nerve = nerveMaterial(LOCK.filament, 0.34);
   const signal = nerveMaterial(LOCK.signal, 0.2);
   const disposables: Array<THREE.BufferGeometry | THREE.Material | THREE.Texture> = [
     glass,
-    bright,
     nerve,
     signal,
   ];
@@ -1047,10 +1054,10 @@ export function createKushim(): Rig {
   const torsoPts = [
     new THREE.Vector2(0.055, -0.3),
     new THREE.Vector2(0.12, -0.24),
-    new THREE.Vector2(0.15, -0.12),
-    new THREE.Vector2(0.125, 0.0),
-    new THREE.Vector2(0.15, 0.12),
-    new THREE.Vector2(0.175, 0.22),
+    new THREE.Vector2(0.158, -0.12),
+    new THREE.Vector2(0.105, 0.0),
+    new THREE.Vector2(0.155, 0.12),
+    new THREE.Vector2(0.2, 0.22),
     new THREE.Vector2(0.15, 0.3),
     new THREE.Vector2(0.075, 0.38),
     new THREE.Vector2(0.048, 0.46),
@@ -1144,9 +1151,7 @@ export function createKushim(): Rig {
     const shoulder = new THREE.Group();
     shoulder.position.set(side * P.shoulderX, P.shoulderLocalY, 0);
     chest.add(shoulder);
-    const joint = solid(shoulder, new THREE.SphereGeometry(0.032, 12, 8), bright);
-    joint.scale.set(0.78, 0.62, 0.5);
-    const upperMesh = solid(shoulder, capsule(0.046, P.upperArm), glass);
+    const upperMesh = solid(shoulder, limbTube(0.05, 0.034, P.upperArm), glass);
     upperMesh.position.y = -P.upperArm / 2;
     const upperN = emptyRibbon();
     fillLimb(upperN, P.upperArm, 16, 0.032, 0.06, 0.00013, 0.6, side * 1.3, side);
@@ -1155,9 +1160,7 @@ export function createKushim(): Rig {
     const elbow = new THREE.Group();
     elbow.position.y = -P.upperArm;
     shoulder.add(elbow);
-    const elbowJoint = solid(elbow, new THREE.SphereGeometry(0.022, 10, 8), bright);
-    elbowJoint.scale.set(0.72, 0.58, 0.48);
-    const foreMesh = solid(elbow, capsule(0.036, P.foreArm), glass);
+    const foreMesh = solid(elbow, limbTube(0.032, 0.024, P.foreArm), glass);
     foreMesh.position.y = -P.foreArm / 2;
     const foreN = emptyRibbon();
     fillLimb(foreN, P.foreArm, 12, 0.022, 0.08, 0.00012, 0.55, side * 2.1, side);
@@ -1166,11 +1169,8 @@ export function createKushim(): Rig {
     const wrist = new THREE.Group();
     wrist.position.y = -P.foreArm;
     elbow.add(wrist);
-    const wristJoint = solid(wrist, new THREE.SphereGeometry(0.016, 10, 8), bright);
-    wristJoint.scale.set(0.7, 0.55, 0.46);
-    const palm = solid(wrist, new THREE.SphereGeometry(0.034, 12, 8), glass);
-    palm.position.set(0, -0.03, 0.01);
-    palm.scale.set(0.85, 1.15, 0.42);
+    const palm = solid(wrist, new THREE.BoxGeometry(0.058, 0.046, 0.014), glass);
+    palm.position.set(0, -0.03, 0.012);
     const fingers = addFingers(wrist, side, glass);
     const handN = emptyRibbon();
     fillHand(handN, side);
@@ -1239,9 +1239,7 @@ export function createKushim(): Rig {
     hip.userData.lockSide = side;
     hip.position.set(side * 0.11, P.hipY, 0);
     root.add(hip);
-    const hipJoint = solid(hip, new THREE.SphereGeometry(0.038, 12, 8), bright);
-    hipJoint.scale.set(0.78, 0.62, 0.52);
-    const thighMesh = solid(hip, capsule(0.068, P.thigh), glass);
+    const thighMesh = solid(hip, limbTube(0.076, 0.048, P.thigh), glass);
     thighMesh.position.y = -P.thigh / 2;
     const hipN = emptyRibbon();
     fillLimb(hipN, P.thigh, 18, 0.048, 0.05, 0.00014, 0.6, side * 2.4, side);
@@ -1266,10 +1264,7 @@ export function createKushim(): Rig {
     knee.userData.lockKey = "knee";
     knee.position.y = -P.thigh;
     hip.add(knee);
-    const cap = solid(knee, new THREE.SphereGeometry(0.024, 10, 8), bright);
-    cap.scale.set(0.74, 0.58, 0.48);
-    cap.position.z = 0.008;
-    const shinMesh = solid(knee, capsule(0.046, P.shin), glass);
+    const shinMesh = solid(knee, limbTube(0.044, 0.032, P.shin), glass);
     shinMesh.position.y = -P.shin / 2;
     const shinN = emptyRibbon();
     fillLimb(shinN, P.shin, 14, 0.03, 0.08, 0.00012, 0.55, 3.1 + side, side);
@@ -1279,17 +1274,13 @@ export function createKushim(): Rig {
     ankle.userData.lockKey = "ankle";
     ankle.position.y = -P.shin;
     knee.add(ankle);
-    const ankleJoint = solid(ankle, new THREE.SphereGeometry(0.016, 10, 8), bright);
-    ankleJoint.scale.set(0.7, 0.55, 0.46);
     const foot = new THREE.Group();
     ankle.add(foot);
-    const footMesh = solid(foot, capsule(0.028, 0.16), glass);
-    footMesh.rotation.x = Math.PI / 2;
-    footMesh.position.set(0, -0.028, 0.05);
+    const footMesh = solid(foot, new THREE.BoxGeometry(0.056, 0.016, 0.14), glass);
+    footMesh.position.set(0, -0.016, 0.055);
     for (let t = 0; t < 5; t++) {
-      const toe = solid(foot, capsule(0.008, 0.028), glass);
-      toe.rotation.x = Math.PI / 2;
-      toe.position.set((t - 2) * 0.014 * side, -0.02, 0.145);
+      const toe = solid(foot, new THREE.BoxGeometry(0.01, 0.01, 0.026), glass);
+      toe.position.set((t - 2) * 0.012 * side, -0.012, 0.136);
     }
     const footN = emptyRibbon();
     fillFoot(footN, side);
