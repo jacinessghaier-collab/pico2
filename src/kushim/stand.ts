@@ -161,12 +161,20 @@ export const CHANGES: Change[] = [
     body: "Ohne vorherige Zeile streicht die Reparatur die Entschuldigung und kürzt, ohne Ersatzsatz. Der Name gilt nur als ganzes Wort: Jacin bleibt in Jacinta stehen. Offen bleiben drei: Namen nicht erfragen, Abbruch an der Historie, die nächste Regel in derselben Funktion.",
     source: "Stundenplan",
   },
+  {
+    id: "viseme-clock",
+    time: "09:20",
+    step: null,
+    title: "Visem am Texttakt",
+    body: "Nach der geschätzten Dauer liegt der Mund in derselben Ruhe wie im Leerlauf, auch wenn onend später kommt. Gemessen an da: die letzte Form aa blieb sonst offen. Kein Ausblenden, keine zweite Uhr. Die Schätzung darf kürzer sein als die Stimme. FIRST_PAUSE_MS bleibt 320.",
+    source: "Stundenplan",
+  },
 ];
 
 export const DONE_STEP = 9;
 export const NEXT_STEP = 10;
-export const NEXT_RUN_LABEL = "09:00";
+export const NEXT_RUN_LABEL = "10:00";
 
-/** Hourly pipeline. Step 8 re-read the appearance lock. Melody stays deferred. */
-export const HOURLY_DONE = 8;
-export const HOURLY_NEXT = 9;
+/** Hourly pipeline. Step 9 ends the last viseme on the text clock. Melody stays deferred. */
+export const HOURLY_DONE = 9;
+export const HOURLY_NEXT = 10;
