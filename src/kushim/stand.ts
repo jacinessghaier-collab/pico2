@@ -177,12 +177,20 @@ export const CHANGES: Change[] = [
     body: "Nach der geschätzten Dauer liegt der Mund in derselben Ruhe wie im Leerlauf, auch wenn onend später kommt. Gemessen an da: die letzte Form aa blieb sonst offen. Kein Ausblenden, keine zweite Uhr. Die Schätzung darf kürzer sein als die Stimme. FIRST_PAUSE_MS bleibt 320.",
     source: "Stundenplan",
   },
+  {
+    id: "scout-skip",
+    time: "18:40",
+    step: 10,
+    title: "Scouting verworfen",
+    body: "Der 10-Stufen-Plan (Weg A Anny und Space Colonization, Weg B MPFB2 und Qwen, Weg C Audio2Face) ersetzt die gesperrte Figur. Stufen 1 bis 6 liegen schon im prozeduralen Rig. Boden, Nebel, Orbit-Kamera, Bloom, Transmission-Buffer und ein GLB-Tausch wirft lock-check. Kein zweites Rig, kein zweiter Check. lock.ts bleibt. FIRST_PAUSE_MS bleibt 320. Satzmelodie bleibt ausgesetzt. Eine elfte Stufe gibt es nicht.",
+    source: "Stundenplan",
+  },
 ];
 
-export const DONE_STEP = 9;
+export const DONE_STEP = 10;
 export const NEXT_STEP = 10;
-export const NEXT_RUN_LABEL = "10:00";
+export const NEXT_RUN_LABEL = "—";
 
-/** Hourly pipeline. Step 9 read the appearance lock. The last viseme ends on the text clock. Melody stays deferred. */
-export const HOURLY_DONE = 9;
+/** Hourly pipeline closed. The scouting rebuild was refused. Melody stays deferred. There is no stage 11. */
+export const HOURLY_DONE = 10;
 export const HOURLY_NEXT = 10;

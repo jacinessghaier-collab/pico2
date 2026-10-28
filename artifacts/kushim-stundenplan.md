@@ -26,17 +26,19 @@ Lock erneut gelesen: dieselbe Prüfung in `src/kushim/lock-check.ts`. Ein Bruch 
 
 Stabilitätscheck um 09:00: dieselbe Prüfung, gelesen über die Trainingsstunden, Takt `LOCK_READ_SEC` (zwei Sekunden). Kein zweiter Check, kein Post-Pass, kein visueller Eingriff. Gemessen in `src/kushim/lock-check.test.ts`. `lock.ts` bleibt. Die Pause von 320 ms bleibt. Satzmelodie bleibt ausgesetzt.
 
-Bau: Stufe 9 von 10 erledigt (kürzerer erster Satz). Nächste Stufe ist weiter der Stabilitätscheck; der Lock liegt schon. Die Stundenpipeline hat ihn um 09:00 nur gelesen, ohne einen neuen Bau und ohne eine elfte Stufe. Der letzte Visem endet mit dem Texttakt, gemessen in `src/kushim/speech.test.ts`. Satzmelodie bleibt ausgesetzt. Die Pause von 320 ms bleibt. Marker: `src/kushim/stand.ts`.
+Scouting um 18:40: der vorgelegte 10-Stufen-Plan (Weg A, B und C) beschreibt eine andere Figur als das gesperrte Still. Referenz bleibt Cyan auf Schwarz, eine rote Schulter, kein Boden, kein Nebel, frontale Kamera, acht Kopflängen. Stufen 1 bis 6 des Plans liegen schon im prozeduralen Rig. Boden, Nebel, Orbit, Bloom, Transmission-Buffer, Anny, MPFB2, Audio2Face und ein GLB-Tausch fallen an `lock-check`. Nichts davon ist gebaut. Kein zweites Rig.
+
+Bau: Stufe 10 von 10 erledigt. Die Stundenpipeline ist zu. Eine elfte Stufe gibt es nicht. Der letzte Visem endet mit dem Texttakt, gemessen in `src/kushim/speech.test.ts`. Satzmelodie bleibt ausgesetzt. Die Pause von 320 ms bleibt. Marker: `src/kushim/stand.ts`. Die Kopfzeile nennt keine nächste Stufe mehr.
 
 ## Fünf Schritte voraus
 
-Geprüft. Abkürzungen stehen dabei. Die Satzmelodie ist keiner dieser Schritte.
+Geprüft, bevor sie als Arbeit gelten. Alle fünf entfallen. Die Satzmelodie ist keiner dieser Schritte. Die Antwortform bleibt auf ihrer eigenen Spur.
 
-1. **Antwort nur durch `shapeReply`.** Erledigt: ein Aufruf in der Oberfläche, Rohtext aus Server und Ersatz, die Formregeln sind aus dem Systemtext. Keine weitere Form, kein zweiter Block im Systemtext. Die nächsten fünf Schritte dieser Zeile stehen unter „Antwortform“.
-2. **Spitze nur lesen.** Die Lock-Prüfung läuft schon höchstens alle `LOCK_READ_SEC` (zwei Sekunden). Liegt die Spitze neben dem Mittel, entfällt der Eingriff. Kein DPR, kein Material, kein Bloom. Ein Ausreißer auf diesem Takt wäre der einzige Anlass, die Prüfung aus dem Frame zu nehmen.
-3. **Sprechrate bleibt die Stufe.** `stage.speechRate` ist die eine Rate. Keine zweite Uhr, keine Tonhöhe. `FIRST_PAUSE_MS` bleibt 320, solange niemand die eine Pause als falsch hört.
-4. **Dichte bleibt die Stufe.** `stage.filament` ist die eine Dichte. Der Check kennt schon 0.86–1. Keine zweite Dichte und kein Bloom.
-5. **Letzten Visem nicht über den Texttakt halten.** Erledigt. Gemessen offen an `da`: nach `durationMs` blieb `aa` stehen (sx 1,50, Kiefer 0,14), solange `onend` fehlte, auch 400 ms danach. `sampleSpeechMouth` gibt ab dem Texttakt dieselbe Ruhe wie im Leerlauf. Im letzten Abschnitt davor bleibt die Form, ohne Ausblenden. Die Schätzung darf kürzer sein als die Stimme. Keine Melodie.
+1. **Kein zweites Körpermodell.** Anny, MPFB2, SOMA-X, SMPL-X und ein gedroptes GLB ersetzen Geometrie. `auditBaseline` wirft das schon. Das laufende Rig bleibt.
+2. **Keine Bühne.** Boden, Reflektor, Nebel, Bloom, Umgebungskarte und eine transparente Clear-Farbe wirft `assertClearLock`. Orbit und FOV ungleich 26 wirft `assertFrontalCamera`. Der Void bleibt deckend schwarz.
+3. **Keine neue Farbe.** Strom, Kern, Filament und das eine Rot bleiben die Schlüssel in `lock.ts`. Ein türkiser Rim und ein gelbgrünes Nerven-Retarget sind eine andere Palette.
+4. **Kein zweiter Mund.** wLipSync, HeadAudio und Audio2Face brauchen Blendshapes oder CUDA. Dieser Mund ist der vorhandene Visem-Pfad. Keine zweite Uhr. `FIRST_PAUSE_MS` bleibt 320.
+5. **Keine lokale Brücke.** SenseVoice, Qwen3-TTS und ein Electron-Pet laufen nicht in dieser Laufzeit. Stimme bleibt Leo, sonst der Browser. Ein Socket nach `127.0.0.1` wäre ein zweiter Pfad.
 
 ## Antwortform — fünf Schritte
 
