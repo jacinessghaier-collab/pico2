@@ -354,10 +354,73 @@ function taperRadii(r0: number, r1: number, n: number) {
   return radii;
 }
 
+function radiusAt(radii: readonly number[], t: number) {
+  if (radii.length <= 1) return radii[0] ?? 0.02;
+  const x = Math.min(1, Math.max(0, t)) * (radii.length - 1);
+  const i = Math.min(radii.length - 2, Math.floor(x));
+  const f = x - i;
+  const s = f * f * (3 - 2 * f);
+  const a = radii[i] ?? 0.02;
+  const b = radii[i + 1] ?? a;
+  return a + (b - a) * s;
+}
+
+function shellRadius(localY: number) {
+  const pts = SHELL_LATHE;
+  const last = pts.length - 1;
+  if (localY <= pts[0][1]) return pts[0][0];
+  if (localY >= pts[last][1]) return pts[last][0];
+  for (let i = 1; i < pts.length; i++) {
+    if (localY <= pts[i][1]) {
+      const [r0, y0] = pts[i - 1];
+      const [r1, y1] = pts[i];
+      const t = (localY - y0) / (y1 - y0);
+      return r0 + (r1 - r0) * t;
+    }
+  }
+  return pts[last][0];
+}
+
+/** How far the upper-arm silhouette sits outside the torso. Small at the axilla. */
+function armProtrusion(along: number) {
+  const t = Math.min(1, Math.max(0, along));
+  return 0.01 + t * t * 0.085;
+}
+
+/** Chest-local lateral center of the hugged upper arm. */
+function hugCenter(chestLocalY: number, radius: number) {
+  const along =
+    (LOCK.proportions.shoulderLocalY - chestLocalY) / LOCK.proportions.upperArm;
+  const half = shellRadius(chestLocalY) * SHELL_SX;
+  return half + armProtrusion(along) - radius;
+}
+
+/** 0 inside the torso glass, 1 once the vertex clears the skin. */
+function skinFade(x: number, y: number, z: number) {
+  const rad = Math.max(0.02, shellRadius(y));
+  const hx = rad * SHELL_SX;
+  const hz = rad * 0.72;
+  const e = (x * x) / (hx * hx) + (z * z) / (hz * hz);
+  return hermite(0.62, 1.04, e);
+}
+
+type TubeOpts = {
+  /** Extra radius at the hidden proximal tip so the child wraps the parent rim. */
+  sleeve?: number;
+  /** 2 tucks only the root. Lower keeps the limb against the torso longer. */
+  tuckPower?: number;
+  /** Drop the rim where the tube sits inside the torso. No second edge, no orb. */
+  bury?: boolean;
+  /** Child of a bend: stay clear of the joint so the bridge owns the seam. */
+  join?: "child";
+  /** Keep the outer rim against the torso through the axilla. */
+  hug?: boolean;
+};
+
 /**
  * Open tube. Proximal rings tuck into the parent and fade in.
  * Distal rings fade out over `dist`, which matches the child tube's `prox`.
- * No end-cap and no sphere — the seam is a crossfade, not an orb.
+ * A sleeve hides the cylinder rim. No end-cap and no sphere.
  */
 function organicTube(
   radii: readonly number[],
@@ -366,23 +429,79 @@ function organicTube(
   inset: number,
   prox: number,
   dist: number,
+  opts?: TubeOpts,
 ) {
   const seg = 22;
-  const rings = radii.length;
+  const rings = 24;
+  const sleeve = opts?.sleeve ?? 0;
+  const tuckPower = opts?.tuckPower ?? 2;
+  const bury = opts?.bury ?? false;
+  const shoulderX = LOCK.proportions.shoulderX;
+  const shoulderY = LOCK.proportions.shoulderLocalY;
   const pos: number[] = [];
   const fade: number[] = [];
   const idx: number[] = [];
   for (let i = 0; i < rings; i++) {
-    const t = rings === 1 ? 0 : i / (rings - 1);
+    const t = i / (rings - 1);
     const y = prox * (1 - t) - length * t;
-    const r = radii[i] ?? radii[radii.length - 1] ?? 0.02;
-    const bias = -side * inset * (1 - t) * (1 - t);
+    let r = radiusAt(radii, t);
+    if (sleeve > 0 && prox > 0) {
+      const tip = 1 - hermite(prox, 0, y);
+      r *= 1 + sleeve * tip;
+    }
+    let bias = -side * inset * Math.pow(1 - t, tuckPower);
+    if (opts?.hug) bias = side * (hugCenter(shoulderY + y, r) - shoulderX);
     let cover = 1;
-    if (prox > 0) cover = Math.min(cover, hermite(prox, 0, y));
+    if (opts?.join === "child" && prox > 0) cover = Math.min(cover, hermite(0, -prox, y));
+    else if (prox > 0) cover = Math.min(cover, hermite(prox, 0, y));
     if (dist > 0) cover = Math.min(cover, hermite(-length, -length + dist, y));
+    if (opts?.join === "child" && prox > 0 && y > -prox) {
+      const held = radii[0] ?? r;
+      const u = hermite(0, -prox, y);
+      r = held + (r - held) * u;
+    }
     for (let j = 0; j <= seg; j++) {
       const a = (j / seg) * Math.PI * 2;
-      pos.push(Math.cos(a) * r + bias, y, Math.sin(a) * r * 0.8);
+      const x = Math.cos(a) * r + bias;
+      const z = Math.sin(a) * r * 0.8;
+      let ring = cover;
+      if (bury) ring *= skinFade(side * shoulderX + x, shoulderY + y, z);
+      pos.push(x, y, z);
+      fade.push(ring);
+    }
+  }
+  const row = seg + 1;
+  for (let i = 0; i < rings - 1; i++) {
+    for (let j = 0; j < seg; j++) {
+      const a = i * row + j;
+      const b = a + row;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("aFade", new THREE.Float32BufferAttribute(fade, 1));
+  geo.setIndex(idx);
+  return geo;
+}
+
+/**
+ * Constant-radius lathe across a bend. Ends fade inside the two bones.
+ * The joint itself is this tube, so the rim is not a second cylinder edge.
+ */
+function jointBridge(radius: number, span: number) {
+  const rings = 18;
+  const seg = 22;
+  const pos: number[] = [];
+  const fade: number[] = [];
+  const idx: number[] = [];
+  for (let i = 0; i < rings; i++) {
+    const t = i / (rings - 1);
+    const y = span * (1 - 2 * t);
+    const cover = hermite(0, 0.32, t) * hermite(1, 0.68, t);
+    for (let j = 0; j <= seg; j++) {
+      const a = (j / seg) * Math.PI * 2;
+      pos.push(Math.cos(a) * radius, y, Math.sin(a) * radius * 0.8);
       fade.push(cover);
     }
   }
@@ -399,6 +518,148 @@ function organicTube(
   geo.setAttribute("aFade", new THREE.Float32BufferAttribute(fade, 1));
   geo.setIndex(idx);
   return geo;
+}
+
+/** Drop the torso's side rim where the arm already owns the silhouette. */
+function fadeTorsoSides(geo: THREE.BufferGeometry) {
+  const pos = geo.getAttribute("position");
+  const fade = new Float32Array(pos.count);
+  const P = LOCK.proportions;
+  const yTop = P.shoulderLocalY;
+  const yBot = yTop - P.upperArm;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i) * SHELL_SX;
+    const y = pos.getY(i);
+    const z = pos.getZ(i) * 0.72;
+    let cover = 1;
+    if (y < yTop + 0.1 && y > yBot + 0.02) {
+      const along = Math.min(1, Math.max(0, (yTop - y) / P.upperArm));
+      const r = LIMB.upper.r0 + (LIMB.upper.r1 - LIMB.upper.r0) * along;
+      const ax = hugCenter(y, r);
+      for (const side of [1, -1] as const) {
+        const ex = (x - side * ax) / (r * 1.2);
+        const ez = z / (r * 1.05);
+        const inside = ex * ex + ez * ez;
+        if (inside < 1) cover = Math.min(cover, hermite(0.15, 0.9, inside));
+      }
+    }
+    fade[i] = cover;
+  }
+  geo.setAttribute("aFade", new THREE.Float32BufferAttribute(fade, 1));
+}
+
+/**
+ * Deltoid slope from the neck base out to the arm root.
+ * A swept lathe, buried where it enters the torso. Not a joint sphere.
+ */
+function shoulderSlope(side: 1 | -1) {
+  const samples = 16;
+  const seg = 16;
+  const pos: number[] = [];
+  const fade: number[] = [];
+  const idx: number[] = [];
+  const p0 = new THREE.Vector3(side * 0.07, 0.44, 0);
+  const p1 = new THREE.Vector3(side * 0.18, 0.34, 0.01);
+  const p2 = new THREE.Vector3(side * 0.15, 0.16, 0.006);
+  const c = new THREE.Vector3();
+  const tang = new THREE.Vector3();
+  const sideV = new THREE.Vector3();
+  const bin = new THREE.Vector3();
+  const up = new THREE.Vector3(0, 0, 1);
+  for (let i = 0; i < samples; i++) {
+    const t = i / (samples - 1);
+    const u = 1 - t;
+    c.set(0, 0, 0)
+      .addScaledVector(p0, u * u)
+      .addScaledVector(p1, 2 * u * t)
+      .addScaledVector(p2, t * t);
+    tang.set(0, 0, 0)
+      .addScaledVector(p0, -2 * u)
+      .addScaledVector(p1, 2 * (u - t))
+      .addScaledVector(p2, 2 * t);
+    if (tang.lengthSq() < 1e-8) tang.set(side, -1, 0);
+    tang.normalize();
+    sideV.crossVectors(tang, up);
+    if (sideV.lengthSq() < 1e-8) sideV.set(1, 0, 0);
+    sideV.normalize();
+    bin.crossVectors(sideV, tang).normalize();
+    const rad = 0.014 + Math.sin(Math.PI * t) * 0.016;
+    const end = hermite(0, 0.16, t) * hermite(1, 0.7, t);
+    for (let j = 0; j <= seg; j++) {
+      const a = (j / seg) * Math.PI * 2;
+      const x = c.x + sideV.x * Math.cos(a) * rad + bin.x * Math.sin(a) * rad * 0.62;
+      const y = c.y + sideV.y * Math.cos(a) * rad + bin.y * Math.sin(a) * rad * 0.62;
+      const z = c.z + sideV.z * Math.cos(a) * rad + bin.z * Math.sin(a) * rad * 0.62;
+      pos.push(x, y, z);
+      fade.push(end * skinFade(x, y, z));
+    }
+  }
+  const row = seg + 1;
+  for (let i = 0; i < samples - 1; i++) {
+    for (let j = 0; j < seg; j++) {
+      const a = i * row + j;
+      const b = a + row;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("aFade", new THREE.Float32BufferAttribute(fade, 1));
+  geo.setIndex(idx);
+  return geo;
+}
+
+/** Sole kiss in world Y. The ground pool stays the short oval under the ankle. */
+const SOLE_KISS = 0.014;
+
+/**
+ * Foot as a lathe along its length. Heel and toe close (no open rim).
+ * The sole dips at heel and ball and lifts through the arch.
+ */
+function footLathe() {
+  const steps = 32;
+  const seg = 20;
+  const z0 = -0.046;
+  const z1 = 0.168;
+  const pos: number[] = [];
+  const idx: number[] = [];
+  let minY = Infinity;
+  for (let i = 0; i < steps; i++) {
+    const u = i / (steps - 1);
+    const end = Math.min(hermite(0, 0.1, u), hermite(1, 0.58, u));
+    const heel = Math.exp(-((u - 0.14) ** 2) / 0.012);
+    const arch = Math.exp(-((u - 0.46) ** 2) / 0.016);
+    const ball = Math.exp(-((u - 0.72) ** 2) / 0.011);
+    const ankle = Math.exp(-((u - 0.24) ** 2) / 0.008);
+    const width = (0.018 + 0.01 * heel + 0.018 * ball) * (0.18 + 0.82 * end);
+    const height =
+      (0.016 + 0.046 * heel + 0.014 * ball + 0.05 * ankle) * (0.12 + 0.88 * end);
+    const toeLift = hermite(0.68, 1, u) * 0.016 * end;
+    const sole = -0.03 + 0.024 * arch * end + toeLift;
+    const z = z0 + (z1 - z0) * u;
+    for (let j = 0; j <= seg; j++) {
+      const ang = (j / seg) * Math.PI * 2;
+      const cx = Math.cos(ang);
+      const sy = Math.sin(ang);
+      const yk = sy < 0 ? -Math.pow(-sy, 0.92) : sy;
+      const y = sole + ((yk + 1) * 0.5) * height;
+      const x = cx * width * (sy < 0 ? 0.92 : 1);
+      if (y < minY) minY = y;
+      pos.push(x, y, z);
+    }
+  }
+  const row = seg + 1;
+  for (let i = 0; i < steps - 1; i++) {
+    for (let j = 0; j < seg; j++) {
+      const a = i * row + j;
+      const b = a + row;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  return { geo, minY };
 }
 
 function glowSprite(inner: string, outer: string, spikes: number) {
@@ -453,13 +714,15 @@ const SHELL_LATHE: Array<[number, number]> = [
   [0.05, 0.5],
 ];
 /** Crossfade length shared by a parent distal end and its child proximal end. */
-const BLEND = { elbow: 0.09, knee: 0.09, shoulder: 0.016, hip: 0.02 };
+const BLEND = { elbow: 0.14, knee: 0.14, shoulder: 0.02, hip: 0.02 };
 const LIMB = {
-  upper: { r0: 0.056, r1: 0.032, inset: 0.01 },
+  upper: { r0: 0.056, r1: 0.032, inset: 0.024 },
   fore: { r0: 0.032, r1: 0.02, inset: 0 },
   thigh: { r0: 0.072, r1: 0.038, inset: 0.008 },
   shin: { r0: 0.038, r1: 0.024, inset: 0 },
 } as const;
+/** Deltoid swell along the upper arm. Buried in the torso, so it is a slope, not a ball. */
+const UPPER_RADII = [0.044, 0.056, 0.06, 0.054, 0.048, 0.042, 0.038, 0.034, 0.032];
 
 const auraVert = /* glsl */ `
 uniform float uOriginY;
@@ -498,6 +761,25 @@ function buildAuraFrag() {
   const L = LIMB;
   const limb = (x: number, yTop: number, yBot: number, r0: number, r1: number, inset: number) =>
     `sdLimb(p, ${g4(x)}, ${g4(yTop)}, ${g4(yBot)}, ${g4(r0)}, ${g4(r1)}, ${g4(inset)})`;
+  const hugGlsl = (sign: 1 | -1) => {
+    const n = 6;
+    const pts: Array<{ x: number; y: number; r: number }> = [];
+    for (let i = 0; i <= n; i++) {
+      const along = i / n;
+      const y = shoulderY - along * P.upperArm;
+      const r = L.upper.r0 + (L.upper.r1 - L.upper.r0) * along;
+      pts.push({ x: sign * hugCenter(y - chestY, r), y, r });
+    }
+    return pts
+      .slice(1)
+      .map((p, i) => {
+        const a = pts[i];
+        return `d = min(d, sdTaper(p, vec2(${g4(a.x)}, ${g4(a.y)}), vec2(${g4(p.x)}, ${g4(p.y)}), ${g4(a.r)}, ${g4(p.r)}));`;
+      })
+      .join("\n    ");
+  };
+  const hugPos = hugGlsl(1);
+  const hugNeg = hugGlsl(-1);
   return /* glsl */ `
 uniform vec3 uColor;
 uniform float uOpacity;
@@ -543,11 +825,29 @@ float sdLimb(vec2 p, float x, float yTop, float yBot, float r0, float r1, float 
   return sdTaper(p, vec2(lean, yTop), vec2(x, yBot), r0, r1);
 }
 
+float sdDeltoid(vec2 p, float s) {
+  float neck = sdTaper(p, vec2(s * 0.08, 1.72), vec2(s * 0.19, 1.60), 0.016, 0.028);
+  float cap = sdTaper(p, vec2(s * 0.19, 1.60), vec2(s * 0.15, 1.42), 0.028, 0.016);
+  return smin(neck, cap, 0.026);
+}
+
+float sdHug(vec2 p, float s) {
+  float d = 8.0;
+  if (s > 0.0) {
+    ${hugPos}
+  } else {
+    ${hugNeg}
+  }
+  return d;
+}
+
 float sdBody(vec2 p) {
   float d = sdTorso(p);
   d = smin(d, sdEllipse(p, vec2(0.0, ${g4(headY)}), vec2(${g4(P.headRadius)}, ${g4(P.headRadius * SKULL_SY)})), 0.036);
-  d = smin(d, ${limb(P.shoulderX, shoulderY, elbowY, L.upper.r0, L.upper.r1, L.upper.inset)}, 0.036);
-  d = smin(d, ${limb(-P.shoulderX, shoulderY, elbowY, L.upper.r0, L.upper.r1, L.upper.inset)}, 0.036);
+  d = smin(d, sdDeltoid(p, 1.0), 0.032);
+  d = smin(d, sdDeltoid(p, -1.0), 0.032);
+  d = smin(d, sdHug(p, 1.0), 0.028);
+  d = smin(d, sdHug(p, -1.0), 0.028);
   d = smin(d, ${limb(P.shoulderX, elbowY, wristY, L.fore.r0, L.fore.r1, 0)}, 0.024);
   d = smin(d, ${limb(-P.shoulderX, elbowY, wristY, L.fore.r0, L.fore.r1, 0)}, 0.024);
   d = smin(d, ${limb(P.shoulderX, wristY, wristY - 0.06, 0.02, 0.016, 0)}, 0.018);
@@ -1243,14 +1543,12 @@ export function createKushim(): Rig {
   chest.position.y = P.chestY;
   root.add(chest);
 
-  const torso = solid(
-    chest,
-    new THREE.LatheGeometry(
-      SHELL_LATHE.map(([r, y]) => new THREE.Vector2(r, y)),
-      28,
-    ),
-    glass,
+  const torsoGeo = new THREE.LatheGeometry(
+    SHELL_LATHE.map(([r, y]) => new THREE.Vector2(r, y)),
+    28,
   );
+  fadeTorsoSides(torsoGeo);
+  const torso = solid(chest, torsoGeo, glass);
   torso.scale.set(SHELL_SX, 1, 0.72);
   torso.userData.lockKey = "torso";
 
@@ -1341,15 +1639,17 @@ export function createKushim(): Rig {
     const shoulder = new THREE.Group();
     shoulder.position.set(side * P.shoulderX, P.shoulderLocalY, 0);
     chest.add(shoulder);
+    solid(chest, shoulderSlope(side), glass);
     const upperMesh = solid(
       shoulder,
       organicTube(
-        taperRadii(LIMB.upper.r0, LIMB.upper.r1, 8),
+        UPPER_RADII,
         P.upperArm,
         side,
         LIMB.upper.inset,
         BLEND.shoulder,
         BLEND.elbow,
+        { bury: true, hug: true },
       ),
       glass,
     );
@@ -1360,9 +1660,12 @@ export function createKushim(): Rig {
     const elbow = new THREE.Group();
     elbow.position.y = -P.upperArm;
     shoulder.add(elbow);
+    solid(elbow, jointBridge(LIMB.fore.r0, BLEND.elbow), glass);
     const foreMesh = solid(
       elbow,
-      organicTube(taperRadii(LIMB.fore.r0, LIMB.fore.r1, 7), P.foreArm, side, 0, BLEND.elbow, 0),
+      organicTube(taperRadii(LIMB.fore.r0, LIMB.fore.r1, 8), P.foreArm, side, 0, BLEND.elbow, 0, {
+        join: "child",
+      }),
       glass,
     );
     const foreN = emptyRibbon();
@@ -1475,9 +1778,12 @@ export function createKushim(): Rig {
     knee.userData.lockKey = "knee";
     knee.position.y = -P.thigh;
     hip.add(knee);
+    solid(knee, jointBridge(LIMB.shin.r0, BLEND.knee), glass);
     const shinMesh = solid(
       knee,
-      organicTube(taperRadii(LIMB.shin.r0, LIMB.shin.r1, 7), P.shin, side, 0, BLEND.knee, 0),
+      organicTube(taperRadii(LIMB.shin.r0, LIMB.shin.r1, 8), P.shin, side, 0, BLEND.knee, 0.035, {
+        join: "child",
+      }),
       glass,
     );
     const shinN = emptyRibbon();
@@ -1490,23 +1796,10 @@ export function createKushim(): Rig {
     knee.add(ankle);
     const foot = new THREE.Group();
     ankle.add(foot);
-    const footMesh = solid(
-      foot,
-      new THREE.LatheGeometry(
-        [
-          new THREE.Vector2(0.012, -0.01),
-          new THREE.Vector2(0.02, 0.02),
-          new THREE.Vector2(0.022, 0.06),
-          new THREE.Vector2(0.014, 0.1),
-          new THREE.Vector2(0.007, 0.13),
-        ],
-        10,
-      ),
-      glass,
-    );
-    footMesh.rotation.x = Math.PI / 2;
-    footMesh.scale.set(1.25, 1, 0.36);
-    footMesh.position.set(0, -0.02, 0.024);
+    const shaped = footLathe();
+    const footMesh = solid(foot, shaped.geo, glass);
+    const ankleY = P.hipY - P.thigh - P.shin;
+    footMesh.position.y = SOLE_KISS - ankleY - shaped.minY;
     const footN = emptyRibbon();
     fillFoot(footN, side);
     commitRibbon(foot, footN, nerve);
