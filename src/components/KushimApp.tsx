@@ -2,11 +2,13 @@ import { useServerFn } from "@tanstack/react-start";
 import { Mic, Send, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ComponentType, FormEvent, RefObject } from "react";
+import { isRepairRequest, shapeReply, trimInterrupted } from "@/kushim/dialogue";
 import { fallbackReply } from "@/kushim/fallback";
 import type { Gesture } from "@/kushim/lock";
 import type { Pose } from "@/kushim/motion";
 import { askKushim, speakKushim } from "@/kushim/server";
-import { speakBrowser, speakLeo, stopSpeech } from "@/kushim/speech";
+import { speakBrowser, speakLeo, spokenFraction, stopSpeech } from "@/kushim/speech";
+import { DONE_STEP, NEXT_STEP, STEPS } from "@/kushim/stand";
 import { stageAt } from "@/kushim/stages";
 import { loadThread, loadVoice, rememberName, saveThread, saveVoice, trainingHour, type Turn } from "@/kushim/training";
 
@@ -57,6 +59,8 @@ export function KushimApp() {
   const speak = useServerFn(speakKushim);
   const poseRef = useRef<Pose>(emptyPose());
   const run = useRef(0);
+  const phase = useRef<"idle" | "think" | "speak">("idle");
+  const threadRef = useRef<Turn[]>([]);
   const recRef = useRef<Rec | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const [Scene, setScene] = useState<ComponentType<{ poseRef: RefObject<Pose> }> | null>(null);
@@ -78,7 +82,9 @@ export function KushimApp() {
 
   useEffect(() => {
     void import("@/kushim/KushimScene").then((mod) => setScene(() => mod.KushimScene));
-    setMsgs(loadThread());
+    const loaded = loadThread();
+    threadRef.current = loaded;
+    setMsgs(loaded);
     setHour(trainingHour());
     const voice = loadVoice();
     setVoiceOn(voice.on);
@@ -117,7 +123,10 @@ export function KushimApp() {
 
   async function sayAloud(text: string, hourNow: number, mine: number) {
     if (!voiceOn) {
-      setGesture("idle");
+      if (mine === run.current) {
+        phase.current = "idle";
+        setGesture("idle");
+      }
       return;
     }
     const stage = stageAt(hourNow);
@@ -128,7 +137,7 @@ export function KushimApp() {
       if (leo) {
         const audio = await speak({ data: { text } });
         if (mine !== run.current) return;
-        if (audio.ok) await speakLeo(audio.audio, audio.mime);
+        if (audio.ok) await speakLeo(audio.audio, audio.mime, text);
         else await speakBrowser(text, stage.speechRate, stage.sentenceGapMs, langOf(text));
       } else {
         await speakBrowser(text, stage.speechRate, stage.sentenceGapMs, langOf(text));
@@ -137,6 +146,7 @@ export function KushimApp() {
       setNote("Die Stimme ist gerade still.");
     } finally {
       if (mine === run.current) {
+        phase.current = "idle";
         setSpeaking(false);
         setGesture("idle");
       }
@@ -145,12 +155,18 @@ export function KushimApp() {
 
   async function sendText(raw: string) {
     const clean = raw.trim();
-    if (!clean || pending) return;
+    if (!clean) return;
+    const interrupted = phase.current !== "idle";
+    const fraction = interrupted ? spokenFraction() : 1;
     const mine = ++run.current;
     stopSpeech();
+    phase.current = "think";
     setNote("");
     setListening(false);
-    const next: Turn[] = [...msgs, { role: "user", content: clean }];
+    const history = interrupted ? trimInterrupted(threadRef.current, fraction) : threadRef.current;
+    const previous = [...history].reverse().find((item) => item.role === "assistant")?.content ?? "";
+    const next: Turn[] = [...history, { role: "user", content: clean }];
+    threadRef.current = next;
     setMsgs(next);
     setDraft("");
     setPending(true);
@@ -160,21 +176,33 @@ export function KushimApp() {
     const nameNow = rememberName(clean);
     setHour(hourNow);
     const memory = next.slice(-stageAt(hourNow).memoryTurns);
-    let reply = fallbackReply(clean);
-    try {
-      const result = await ask({ data: { turns: memory, hour: hourNow, name: nameNow } });
-      if (mine !== run.current) return;
-      if (result.ok) reply = { say: result.say, gesture: result.gesture };
-      else setNote(result.error);
-    } catch {
-      if (mine !== run.current) return;
-      setNote("Ich bleibe bei einem kurzen Satz.");
+    let reply = fallbackReply(clean, { name: nameNow, previous });
+    const repair = isRepairRequest(clean) && previous.trim().length > 0;
+    if (!repair) {
+      try {
+        const result = await ask({
+          data: { turns: memory, hour: hourNow, name: nameNow, interrupted },
+        });
+        if (mine !== run.current) return;
+        if (result.ok) reply = { say: result.say, gesture: result.gesture };
+        else setNote(result.error);
+      } catch {
+        if (mine !== run.current) return;
+        setNote("Ich bleibe bei einem kurzen Satz.");
+      }
     }
+    reply = {
+      say: shapeReply(reply.say, { name: nameNow, userText: clean, previous }),
+      gesture: reply.gesture,
+    };
+    if (mine !== run.current) return;
     const withReply: Turn[] = [...next, { role: "assistant", content: reply.say }];
+    threadRef.current = withReply;
     setMsgs(withReply);
     saveThread(withReply);
     setPending(false);
     setGesture(reply.gesture);
+    phase.current = "speak";
     await sayAloud(reply.say, hourNow, mine);
   }
 
@@ -228,6 +256,9 @@ export function KushimApp() {
           <p className="text-xs font-medium tracking-widest text-strom">KUSHIM</p>
           <p className="mt-1 text-sm text-mist">
             Stunde {hour} · {stage.label}
+          </p>
+          <p className="text-xs text-mist">
+            Stufe {DONE_STEP} von {STEPS.length} · Nächste: {STEPS.find((item) => item.id === NEXT_STEP)?.title}
           </p>
         </div>
         <div className="pointer-events-auto flex items-center gap-2">
@@ -298,7 +329,7 @@ export function KushimApp() {
           <button
             type="submit"
             aria-label="Senden"
-            disabled={pending || draft.trim().length === 0}
+            disabled={draft.trim().length === 0}
             className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-strom text-void disabled:opacity-40"
           >
             <Send className="size-5" />

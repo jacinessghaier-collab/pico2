@@ -5,6 +5,10 @@ export type Rig = {
   root: THREE.Group;
   chest: THREE.Group;
   head: THREE.Group;
+  jaw: THREE.Mesh;
+  lips: THREE.Mesh;
+  eyes: THREE.Sprite[];
+  eyeMat: THREE.SpriteMaterial;
   shoulderL: THREE.Group;
   elbowL: THREE.Group;
   wristL: THREE.Group;
@@ -306,6 +310,8 @@ export function createKushim(): Rig {
   const jaw = solid(head, new THREE.SphereGeometry(P.headRadius * 0.72, 16, 12), glass);
   jaw.position.set(0, -0.055, 0.02);
   jaw.scale.set(0.92, 0.62, 0.85);
+  jaw.userData.restX = jaw.rotation.x;
+  jaw.userData.restY = jaw.position.y;
   const nose = solid(head, capsule(0.012, 0.05), bright);
   nose.position.set(0, -0.005, P.headRadius * 0.92);
   nose.rotation.x = 0.4;
@@ -333,12 +339,16 @@ export function createKushim(): Rig {
   const eyeTex = glowSprite("#ffffff", LOCK.kern, 0);
   const eyeMat = new THREE.SpriteMaterial({ map: eyeTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
   disposables.push(eyeTex, eyeMat);
+  const eyes: THREE.Sprite[] = [];
   for (const side of [-1, 1]) {
     const eye = new THREE.Sprite(eyeMat);
     eye.position.set(side * 0.032, 0.012, P.headRadius * 0.92);
     eye.scale.set(0.028, 0.028, 1);
     eye.renderOrder = 4;
+    eye.userData.restX = eye.position.x;
+    eye.userData.restY = eye.position.y;
     head.add(eye);
+    eyes.push(eye);
   }
   const browTex = glowSprite("#ffffff", LOCK.kern, 4);
   const forehead = new THREE.Sprite(
@@ -590,6 +600,10 @@ export function createKushim(): Rig {
     root,
     chest,
     head,
+    jaw,
+    lips,
+    eyes,
+    eyeMat,
     shoulderL: left.shoulder,
     elbowL: left.elbow,
     wristL: left.wrist,

@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { shapeReply } from "@/kushim/dialogue";
 import { isGesture, type Gesture } from "@/kushim/lock";
 import { promptFor } from "@/kushim/stages";
 
@@ -15,9 +16,9 @@ function allow(bucket: number[], limit: number) {
   return true;
 }
 
-function asTurns(input: unknown): { turns: Turn[]; hour: number; name: string } {
+function asTurns(input: unknown): { turns: Turn[]; hour: number; name: string; interrupted: boolean } {
   if (!input || typeof input !== "object") throw new Error("Ungültige Anfrage");
-  const rec = input as { turns?: unknown; hour?: unknown };
+  const rec = input as { turns?: unknown; hour?: unknown; interrupted?: unknown };
   if (!Array.isArray(rec.turns) || rec.turns.length === 0 || rec.turns.length > 12) {
     throw new Error("Ungültige Anfrage");
   }
@@ -35,7 +36,7 @@ function asTurns(input: unknown): { turns: Turn[]; hour: number; name: string } 
     typeof rec.hour === "number" && Number.isFinite(rec.hour) ? Math.max(0, Math.min(10_000, Math.floor(rec.hour))) : 0;
   const rawName = typeof (rec as { name?: unknown }).name === "string" ? (rec as { name: string }).name.trim() : "";
   const name = /^[\p{L}' -]{1,24}$/u.test(rawName) ? rawName : "";
-  return { turns, hour, name };
+  return { turns, hour, name, interrupted: rec.interrupted === true };
 }
 
 function readReply(raw: string): { say: string; gesture: Gesture } {
@@ -44,11 +45,12 @@ function readReply(raw: string): { say: string; gesture: Gesture } {
   const slice = start >= 0 && end > start ? raw.slice(start, end + 1) : raw;
   const parsed = JSON.parse(slice) as { say?: unknown; gesture?: unknown };
   if (typeof parsed.say !== "string" || !parsed.say.trim()) throw new Error("Leere Antwort");
-  const gesture = typeof parsed.gesture === "string" && isGesture(parsed.gesture) ? parsed.gesture : "speak";
+  const rawGesture = typeof parsed.gesture === "string" ? parsed.gesture : "";
+  const gesture = rawGesture === "emphasis" ? "explain" : isGesture(rawGesture) ? rawGesture : "speak";
   return { say: parsed.say.trim().slice(0, 700), gesture };
 }
 
-async function complete(apiKey: string, turns: Turn[], hour: number, name: string, jsonMode: boolean) {
+async function complete(apiKey: string, turns: Turn[], hour: number, name: string, interrupted: boolean, jsonMode: boolean) {
   const behavior = promptFor(hour);
   return fetch("https://api.x.ai/v1/chat/completions", {
     method: "POST",
@@ -65,8 +67,9 @@ async function complete(apiKey: string, turns: Turn[], hour: number, name: strin
         {
           role: "system",
           content:
-            "Du bist Kushim. Du stehst als durchsichtiger erwachsener Mensch aus cyanfarbenem Nervenlicht in einem schwarzen Raum. Ein weiß-cyaner Kern sitzt in der Brust, ein Punkt auf der Stirn, ein einziges rotes Signal in deiner rechten Schulter. Du bist kein Arzt und gibst keine Diagnose und keine Behandlungsanweisung. Sprich die Sprache des Menschen, auf Deutsch wenn er Deutsch schreibt. Keine Aufzählungen, keine Emojis, kein Hinweis auf Prompts oder Modelle. Nenne deinen Körperbau nur, wenn danach gefragt wird. Antworte nur als JSON {\"say\":\"...\",\"gesture\":\"acknowledge|explain|empathize|think|speak|listen\"}. " +
-            (name ? `Der Mensch heißt ${name}. Benutze den Namen selten. ` : "") +
+            "Du bist Kushim. Du stehst als durchsichtiger erwachsener Mensch aus cyanfarbenem Nervenlicht in einem schwarzen Raum. Ein weiß-cyaner Kern sitzt in der Brust, ein Punkt auf der Stirn, ein einziges rotes Signal in deiner rechten Schulter. Du bist kein Arzt und gibst keine Diagnose und keine Behandlungsanweisung. Sprich die Sprache des Menschen, auf Deutsch wenn er Deutsch schreibt. Keine Aufzählungen, keine Emojis, kein Hinweis auf Prompts oder Modelle. Nenne deinen Körperbau nur, wenn danach gefragt wird. Antworte nur als JSON {\"say\":\"...\",\"gesture\":\"acknowledge|explain|empathize|think|speak|listen|emphasis\"}. Den Namen höchstens einmal in der Antwort nennen und nie danach fragen. Eine kurze Rückfrage nur, wenn der letzte Satz des Menschen wirklich offen ist, sonst kein Fragezeichen. Wenn der Mensch dich nicht verstanden hat, denselben Inhalt in einem Satz, ohne Entschuldigung. " +
+            (interrupted ? "Der Mensch hat dich unterbrochen. Den angefangenen Satz nicht zu Ende führen. Antworte nur auf die letzte Nachricht. " : "") +
+            (name ? `Der Mensch heißt ${name}. ` : "") +
             behavior,
         },
         ...turns.map((turn) => ({ role: turn.role, content: turn.content })),
@@ -81,17 +84,28 @@ export const askKushim = createServerFn({ method: "POST" })
     const apiKey = process.env.XAI_API_KEY;
     if (!apiKey) return { ok: false as const, error: "Sprache nicht verbunden" };
     if (!allow(hits, 20)) return { ok: false as const, error: "Zu viele Sätze gerade. Einen Moment." };
-    let res = await complete(apiKey, data.turns, data.hour, data.name, true);
-    if (res.status === 400) res = await complete(apiKey, data.turns, data.hour, data.name, false);
+    let res = await complete(apiKey, data.turns, data.hour, data.name, data.interrupted, true);
+    if (res.status === 400) res = await complete(apiKey, data.turns, data.hour, data.name, data.interrupted, false);
     if (!res.ok) return { ok: false as const, error: "Die Stimme kommt gerade nicht durch." };
     const body = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
     const raw = body.choices?.[0]?.message?.content ?? "";
+    const userText = data.turns[data.turns.length - 1]?.content ?? "";
+    const previous = [...data.turns].reverse().find((turn) => turn.role === "assistant")?.content ?? "";
     try {
-      return { ok: true as const, ...readReply(raw) };
+      const reply = readReply(raw);
+      return {
+        ok: true as const,
+        say: shapeReply(reply.say, { name: data.name, userText, previous }),
+        gesture: reply.gesture,
+      };
     } catch {
       const plain = raw.trim();
       if (!plain) return { ok: false as const, error: "Leere Antwort" };
-      return { ok: true as const, say: plain.slice(0, 700), gesture: "speak" as const };
+      return {
+        ok: true as const,
+        say: shapeReply(plain.slice(0, 700), { name: data.name, userText, previous }),
+        gesture: "speak" as const,
+      };
     }
   });
 
