@@ -154,7 +154,10 @@ void main() {
   float pulse = bead * (1.0 - vHaze);
   float lift = clamp(mix(0.16, 0.82, vWarm) + pulse * 0.45, 0.0, 1.0);
   float lineAlpha = (0.72 + pulse * 0.7) * vGain;
-  float hazeAlpha = 0.32 * exp(-vSide * vSide * 0.34) * vGain;
+  // Round disc. A bar's hard edge is what striped the skull. vHaze 0 stays the line bead.
+  float along = (vAlong - 0.5) * 2.0;
+  float hazeDisc = exp(-(vSide * vSide + along * along) * 2.6);
+  float hazeAlpha = hazeDisc * vGain;
   gl_FragColor = vec4(mix(uColor, uCore, lift), mix(lineAlpha, hazeAlpha, vHaze));
 }
 `;
@@ -331,11 +334,6 @@ function solid(parent: THREE.Object3D, geo: THREE.BufferGeometry, material: THRE
   mesh.renderOrder = 1;
   parent.add(mesh);
   return mesh;
-}
-
-function capsule(radius: number, length: number) {
-  const cyl = Math.max(0.012, length - radius * 2);
-  return new THREE.CapsuleGeometry(radius, cyl, 4, 8);
 }
 
 /** Hermite 0 at edge0, 1 at edge1. Parent distal and child proximal sum to 1. */
@@ -1079,91 +1077,70 @@ function fillFoot(ribbon: Ribbon, side: 1 | -1) {
 }
 
 function fillHead(ribbon: Ribbon, radius: number) {
-  // Soft oval volume inside the skull on the current lathe.
-  // Steady haze from chin to crown. A long bar stripes, and a thick curve fans.
-  // No brow, eyes, nose, or spark. Inset so the glass rim stays the silhouette.
-  const rx = radius * 0.86;
-  const ry = radius * 1.16 * 0.96;
-  const rz = radius * 0.7;
+  // Soft volume inside the current lathe skull. Discs, not rows.
+  // A long bar stripes, and a thick curve fans. No brow, eyes, nose, or spark.
+  // Inset so the cyan glass rim stays the silhouette and the void stays outside.
+  const rx = radius * 0.9;
+  const ry = radius * 1.16 * 0.9;
+  const rz = radius * 1.02 * 0.86;
   let seed = 700;
   const h = () => unitHash(seed++);
-  const chord = (
-    ax: number,
-    ay: number,
-    az: number,
-    bx: number,
-    by: number,
-    bz: number,
-    gain: number,
-    width: number,
-    rank: number,
-  ) => {
-    const a = new THREE.Vector3(ax, ay, az);
-    const b = new THREE.Vector3(bx, by, bz);
-    if (a.distanceTo(b) < radius * 0.04) return;
+  const ell = (x: number, y: number, z: number) =>
+    (x * x) / (rx * rx) + (y * y) / (ry * ry) + (z * z) / (rz * rz);
+
+  const pick = (bias: number) => {
+    for (let n = 0; n < 24; n++) {
+      const x = (h() * 2 - 1) * rx;
+      const y = (h() * 2 - 1) * ry;
+      const z = (h() * 2 - 1) * rz;
+      const e = ell(x, y, z);
+      if (e >= 0.96) continue;
+      if (bias > 0 && h() < e * bias) continue;
+      return { x, y, z, e };
+    }
+    return null;
+  };
+
+  const disc = (span: number, gain: number, warm: number, rank: number, bias: number) => {
+    const p = pick(bias);
+    if (!p) return;
+    const theta = h() * Math.PI * 2;
+    const zDir = h() * 2 - 1;
+    const ring = Math.sqrt(Math.max(0, 1 - zDir * zDir));
+    const dx = ring * Math.cos(theta);
+    const dy = ring * Math.sin(theta);
+    const dz = zDir;
+    const half = span * 0.5;
+    const pull = (px: number, py: number, pz: number) => {
+      const e = ell(px, py, pz);
+      if (e <= 0.96) return { x: px, y: py, z: pz };
+      const s = Math.sqrt(0.96 / e);
+      return { x: px * s, y: py * s, z: pz * s };
+    };
+    const a = pull(p.x - dx * half, p.y - dy * half, p.z - dz * half);
+    const b = pull(p.x + dx * half, p.y + dy * half, p.z + dz * half);
+    const len = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+    if (len < radius * 0.035) return;
+    const fall = 1 - Math.min(1, p.e);
     pushCurve(
       ribbon,
       1,
-      (u) => a.clone().lerp(b, u),
-      rank,
-      width,
-      gain,
-      0.58,
+      (u) => new THREE.Vector3(a.x, a.y, a.z).lerp(new THREE.Vector3(b.x, b.y, b.z), u),
+      Math.min(0.4, rank),
+      len / 22,
+      gain * (0.7 + fall * 0.3) * (0.86 + h() * 0.28),
+      warm,
       0,
       1,
     );
   };
 
-  const rows = 14;
-  for (let row = 0; row < rows; row++) {
-    const v = (row + 0.5) / rows;
-    const y = (v - 0.5) * 2 * ry;
-    const ny = Math.min(1, Math.abs(y) / ry);
-    const half = Math.sqrt(Math.max(0, 1 - ny * ny)) * rx;
-    if (half < 0.01) continue;
-    const edge = half * 0.9;
-    for (let k = 0; k < 5; k++) {
-      const dir = h() > 0.5 ? 1 : -1;
-      let ax = (h() - 0.5) * 2 * edge;
-      let bx = ax + dir * half * (1.05 + h() * 0.55);
-      ax = Math.max(-edge, Math.min(edge, ax));
-      bx = Math.max(-edge, Math.min(edge, bx));
-      const z = (h() - 0.5) * rz * 0.85;
-      const yj = y + (h() - 0.5) * ry * 0.18;
-      const tilt = (h() - 0.5) * ry * 0.08;
-      chord(
-        ax,
-        yj,
-        z,
-        bx,
-        yj + tilt,
-        z + (h() - 0.5) * rz * 0.2,
-        0.07 + (k % 3) * 0.01,
-        0.0033,
-        0.04 + ((row + k) % 6) * 0.015,
-      );
-    }
+  for (let i = 0; i < 22; i++) {
+    disc(radius * (0.82 + h() * 0.24), 0.16, 0.3 + h() * 0.08, 0.02 + h() * 0.04, 0.15);
   }
-  for (let i = 0; i < 18; i++) {
-    const pole = i < 9 ? 1 : -1;
-    const y = pole * ry * (0.2 + h() * 0.72);
-    const half = Math.sqrt(Math.max(0.05, 1 - (y / ry) * (y / ry))) * rx;
-    const x = (h() - 0.5) * half * 1.1;
-    const z = (h() - 0.5) * rz * 0.8;
-    const span = half * (0.35 + h() * 0.3);
-    chord(
-      x - span,
-      y,
-      z,
-      x + span * 0.4,
-      y + pole * ry * (0.12 + h() * 0.16),
-      z * 0.5,
-      0.09,
-      0.0032,
-      0.08 + (i % 4) * 0.02,
-    );
+  for (let i = 0; i < 34; i++) {
+    disc(radius * (0.46 + h() * 0.18), 0.1, 0.36 + h() * 0.12, 0.05 + h() * 0.08, 0.35);
   }
-
 }
 
 function fillPelvis(ribbon: Ribbon, hipY: number) {
@@ -1288,7 +1265,9 @@ export function createKushim(): Rig {
   jaw.scale.set(0.05, 0.05, 0.05);
   jaw.userData.restX = jaw.rotation.x;
   jaw.userData.restY = jaw.position.y;
-  const lips = solid(head, capsule(0.0015, 0.012), glass);
+  // Scale stays 1 so the viseme still drives it. The tube itself stays under a pixel,
+  // otherwise the glass rim reads as a mouth in the middle of the haze.
+  const lips = solid(head, new THREE.CapsuleGeometry(0.00035, 0.0008, 2, 6), glass);
   lips.position.set(0, 0, 0);
   lips.rotation.z = Math.PI / 2;
   for (const side of [-1, 1] as const) {
