@@ -76,9 +76,9 @@ describe("appearance lock table", () => {
     assert.equal(LOCK_CANON.void, "#000000");
     assert.equal(LOCK_CANON.glass.fill, 0.004);
     assert.equal(LOCK_CANON.glass.rim, 0.95);
-    assert.equal(LOCK_CANON.aura.opacity, 0.5);
-    assert.equal(LOCK_CANON.aura.tight, 680);
-    assert.equal(LOCK_CANON.ground.radius, 0.22);
+    assert.equal(LOCK_CANON.aura.opacity, 0.55);
+    assert.equal(LOCK_CANON.aura.tight, 980);
+    assert.equal(LOCK_CANON.ground.radius, 0.24);
     assert.equal(LOCK_CANON.ground.foot, 0.11);
     assert.equal(LOCK_CANON.brightBoost, 0);
     assert.equal(LOCK_CANON.strom, "#3AD7FF");
@@ -93,16 +93,16 @@ describe("appearance lock table", () => {
     assert.equal(LOCK_CANON.hipX, 0.11);
     assert.deepEqual(LOCK_CANON.torsoScale, [1.05, 1, 0.72]);
     assert.deepEqual(LOCK_CANON.skullScale, [1, 1.16, 1.02]);
-    assert.equal(LOCK.proportions.hipY, 0.96);
-    assert.equal(LOCK.proportions.chestY, 1.22);
-    assert.equal(LOCK.proportions.shoulderX, 0.2);
+    assert.equal(LOCK.proportions.hipY, 1);
+    assert.equal(LOCK.proportions.chestY, 1.28);
+    assert.equal(LOCK.proportions.shoulderX, 0.21);
     assert.equal(LOCK.proportions.shoulderLocalY, 0.28);
-    assert.equal(LOCK.proportions.upperArm, 0.4);
-    assert.equal(LOCK.proportions.foreArm, 0.31);
-    assert.equal(LOCK.proportions.thigh, 0.46);
-    assert.equal(LOCK.proportions.shin, 0.4);
+    assert.equal(LOCK.proportions.upperArm, 0.42);
+    assert.equal(LOCK.proportions.foreArm, 0.33);
+    assert.equal(LOCK.proportions.thigh, 0.5);
+    assert.equal(LOCK.proportions.shin, 0.46);
     assert.equal(LOCK.proportions.headRadius, 0.105);
-    assert.equal(LOCK.proportions.headLocalY, 0.44);
+    assert.equal(LOCK.proportions.headLocalY, 0.48);
   });
 
   it("throws if a locked value is mutated", () => {
@@ -138,8 +138,8 @@ describe("figure lock", () => {
       assert.doesNotThrow(() => assertRigLock(rig, "build"));
       assert.doesNotThrow(() => assertRigLock(rig, "live"));
       assert.ok(rig.shoulderR.position.x < 0);
-      assert.equal(rig.shoulderR.position.x, -0.2);
-      assert.equal(rig.shoulderL.position.x, 0.2);
+      assert.equal(rig.shoulderR.position.x, -LOCK.proportions.shoulderX);
+      assert.equal(rig.shoulderL.position.x, LOCK.proportions.shoulderX);
       assert.equal(rig.core.parent, rig.shoulderR);
       assert.equal(rig.ring.parent, rig.shoulderR);
       assert.throws(() => {
@@ -232,9 +232,9 @@ describe("figure lock", () => {
       assert.throws(() => assertRigLock(rig, "live"), LockBreach);
       rig.signal.uniforms.uDensity.value = 1;
 
-      rig.chest.position.y = 1.22 + 0.2;
+      rig.chest.position.y = LOCK.proportions.chestY + 0.2;
       assert.throws(() => assertRigLock(rig, "live"), LockBreach);
-      rig.chest.position.y = 1.22;
+      rig.chest.position.y = LOCK.proportions.chestY;
 
       rig.head.position.x = Number.NaN;
       assert.throws(() => assertRigLock(rig, "live"), LockBreach);

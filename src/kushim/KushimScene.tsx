@@ -22,10 +22,10 @@ function Framing() {
     cam.fov = fov;
     const aspect = size.width / Math.max(1, size.height);
     const vertical = (fov * Math.PI) / 180;
-    const distV = (1.12 / Math.tan(vertical / 2)) * 1.08;
+    const distV = (1.22 / Math.tan(vertical / 2)) * 1.06;
     const horizontal = 2 * Math.atan(Math.tan(vertical / 2) * aspect);
-    const distH = (0.72 / Math.tan(horizontal / 2)) * 1.18;
-    const center = 0.92;
+    const distH = (0.8 / Math.tan(horizontal / 2)) * 1.12;
+    const center = 0.96;
     cam.position.set(0, center + 0.08, Math.max(distV, distH));
     cam.lookAt(0, center, 0);
     cam.updateProjectionMatrix();

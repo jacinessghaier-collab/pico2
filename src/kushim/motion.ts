@@ -19,12 +19,12 @@ type Axis = { x: number; y: number; z: number };
 
 function poseTargets(gesture: Gesture): Record<string, Axis> {
   const idle: Record<string, Axis> = {
-    shoulderL: { x: 0.02, y: 0.02, z: 0.1 },
-    elbowL: { x: -0.16, y: 0.02, z: 0 },
-    wristL: { x: -0.25, y: 0, z: 0.5 },
-    shoulderR: { x: 0.02, y: -0.02, z: -0.1 },
-    elbowR: { x: -0.16, y: -0.02, z: 0 },
-    wristR: { x: -0.25, y: 0, z: -0.5 },
+    shoulderL: { x: 0.04, y: 0, z: 0 },
+    elbowL: { x: -0.08, y: 0, z: 0 },
+    wristL: { x: 0, y: 0, z: 0.05 },
+    shoulderR: { x: 0.04, y: 0, z: 0 },
+    elbowR: { x: -0.08, y: 0, z: 0 },
+    wristR: { x: 0, y: 0, z: -0.05 },
     head: { x: 0, y: 0, z: 0 },
   };
   if (gesture === "explain") {

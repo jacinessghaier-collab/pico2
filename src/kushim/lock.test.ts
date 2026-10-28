@@ -13,23 +13,23 @@ describe("visual lock", () => {
     assert.equal(LOCK.glass.fill, 0.004);
     assert.equal(LOCK.glass.rim, 0.95);
     assert.equal(LOCK.glass.sprite, 0.04);
-    assert.equal(LOCK.aura.opacity, 0.5);
-    assert.equal(LOCK.aura.tight, 680);
-    assert.equal(LOCK.ground.opacity, 0.5);
-    assert.equal(LOCK.ground.radius, 0.22);
+    assert.equal(LOCK.aura.opacity, 0.55);
+    assert.equal(LOCK.aura.tight, 980);
+    assert.equal(LOCK.ground.opacity, 0.09);
+    assert.equal(LOCK.ground.radius, 0.24);
     assert.equal(LOCK.ground.foot, 0.11);
     assert.equal(LOCK.ground.y, 0.012);
     assert.deepEqual(LOCK.proportions, {
-      hipY: 0.96,
-      chestY: 1.22,
-      shoulderX: 0.2,
+      hipY: 1,
+      chestY: 1.28,
+      shoulderX: 0.21,
       shoulderLocalY: 0.28,
-      upperArm: 0.4,
-      foreArm: 0.31,
-      thigh: 0.46,
-      shin: 0.4,
+      upperArm: 0.42,
+      foreArm: 0.33,
+      thigh: 0.5,
+      shin: 0.46,
       headRadius: 0.105,
-      headLocalY: 0.44,
+      headLocalY: 0.48,
     });
     assert.deepEqual([...GESTURES], [
       "idle",
