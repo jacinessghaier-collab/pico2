@@ -70,10 +70,16 @@ describe("appearance lock table", () => {
     assert.equal(LOCK.strom, "#3AD7FF");
     assert.equal(LOCK.kern, "#E7FBFF");
     assert.equal(LOCK.signal, "#FF3B4E");
+    assert.equal(LOCK.filament, "#D4F04A");
+    assert.equal(LOCK.filamentKern, "#F7FFC2");
     assert.equal(LOCK_CANON.void, "#02060A");
     assert.equal(LOCK_CANON.strom, "#3AD7FF");
     assert.equal(LOCK_CANON.kern, "#E7FBFF");
     assert.equal(LOCK_CANON.signal, "#FF3B4E");
+    assert.equal(LOCK_CANON.filament, "#D4F04A");
+    assert.equal(LOCK_CANON.filamentKern, "#F7FFC2");
+    assert.equal(LOCK_CANON.signalNerveCore, "#FF8A2A");
+    assert.equal(LOCK_CANON.signalCore, "#FFB15A");
     assert.equal(LOCK_CANON.filamentMin, 0.86);
     assert.equal(LOCK_CANON.filamentMax, 1);
     assert.equal(LOCK_CANON.hipX, 0.11);

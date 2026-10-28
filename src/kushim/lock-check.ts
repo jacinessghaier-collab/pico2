@@ -28,8 +28,10 @@ export const LOCK_CANON = {
   strom: "#3AD7FF",
   kern: "#E7FBFF",
   signal: "#FF3B4E",
-  signalNerveCore: "#FFD0D4",
-  signalCore: "#FFD5D8",
+  filament: "#D4F04A",
+  filamentKern: "#F7FFC2",
+  signalNerveCore: "#FF8A2A",
+  signalCore: "#FFB15A",
   spriteInner: "#FFFFFF",
   proportions: {
     hipY: 0.96,
@@ -54,8 +56,8 @@ export const LOCK_CANON = {
   ringSize: 0.028,
   ringOpacity: 0.8,
   ringPoints: 96,
-  corePos: [-0.01, -0.05, 0.03],
-  ringPos: [0, -0.04, 0.02],
+  corePos: [-0.05, -0.042, 0.042],
+  ringPos: [-0.042, -0.04, 0.034],
   breathX: 0.008,
   breathY: 0.012,
   breathZ: 0.01,
@@ -242,10 +244,10 @@ export function assertLockTable() {
     breach("Die Vergleichstabelle ist nicht eingefroren.", "The comparison table is not frozen.");
   }
   const top = Object.keys(LOCK).sort().join(",");
-  if (top !== "kern,proportions,signal,strom,void") {
+  if (top !== "filament,filamentKern,kern,proportions,signal,strom,void") {
     breach("LOCK hat andere Schlüssel.", "LOCK has different keys.");
   }
-  const colors = ["void", "strom", "kern", "signal"] as const;
+  const colors = ["void", "strom", "kern", "signal", "filament", "filamentKern"] as const;
   for (const key of colors) {
     if (LOCK[key].toUpperCase() !== LOCK_CANON[key]) {
       breach(
@@ -640,11 +642,16 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
 
   mustHex(
     colorSlot(rig.nerve, "uColor"),
-    LOCK_CANON.strom,
-    "Nervenfarbe Strom",
-    "Nerve strom color",
+    LOCK_CANON.filament,
+    "Nervenfarbe Filament",
+    "Nerve filament color",
   );
-  mustHex(colorSlot(rig.nerve, "uCore"), LOCK_CANON.kern, "Nervenfarbe Kern", "Nerve core color");
+  mustHex(
+    colorSlot(rig.nerve, "uCore"),
+    LOCK_CANON.filamentKern,
+    "Nervenfarbe Filamentkern",
+    "Nerve filament highlight",
+  );
   mustClose(
     numberSlot(rig.nerve, "uSpeed", true),
     LOCK_CANON.nerveSpeed,
