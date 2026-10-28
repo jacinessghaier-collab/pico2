@@ -57,21 +57,40 @@ void main() {
  */
 export const RIM_OBLIQUE = { open: 1.2, view0: 0.2, view1: 0.55 } as const;
 
+/**
+ * Body band. Frontal exponent stays above the calf's open lobe.
+ * Oblique softens it a little more. Skull stays on `uRimPower`.
+ */
+export const RIM_BODY = { front: 2.85, oblique: 2.2 } as const;
+
 const shellVert = /* glsl */ `
 attribute float aFade;
 attribute float aKante;
+attribute float aBand;
 varying vec3 vN;
 varying vec3 vW;
 varying float vFade;
 varying float vKante;
+varying float vBand;
 varying float vViewX;
 void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
   vW = world.xyz;
-  vN = normalize(mat3(modelMatrix) * normal);
+  vec3 viewDir = normalize(cameraPosition - vW);
+  vec3 viewObj = normalize(transpose(mat3(modelMatrix)) * viewDir);
+  float k = clamp(aKante, 0.0, 1.0);
+  float oblique = smoothstep(${RIM_OBLIQUE.view0.toFixed(2)}, ${RIM_OBLIQUE.view1.toFixed(2)}, abs(viewObj.x));
+  // Posterior heads face away from a frontal camera. When the figure yaws,
+  // bend each head onto the view plane so the far head grazes too.
+  vec3 back = normalize(vec3(position.x * 5.5, 0.0, -1.0));
+  vec3 grazed = back - viewObj * dot(back, viewObj);
+  float gLen = length(grazed);
+  grazed = gLen > 0.001 ? grazed / gLen : normal;
+  vec3 nLocal = normalize(mix(normal, grazed, oblique * k * 0.82));
+  vN = normalize(mat3(modelMatrix) * nLocal);
   vFade = aFade;
   vKante = aKante;
-  vec3 viewDir = normalize(cameraPosition - vW);
+  vBand = aBand;
   vec3 ax = normalize(vec3(modelMatrix[0]));
   vViewX = abs(dot(ax, viewDir));
   gl_Position = projectionMatrix * viewMatrix * world;
@@ -93,13 +112,19 @@ varying vec3 vN;
 varying vec3 vW;
 varying float vFade;
 varying float vKante;
+varying float vBand;
 varying float vViewX;
 void main() {
   vec3 viewDir = normalize(cameraPosition - vW);
   float ndv = abs(dot(normalize(vN), viewDir));
   float grazing = clamp(1.0 - ndv, 0.0, 1.0);
   float oblique = smoothstep(${RIM_OBLIQUE.view0.toFixed(2)}, ${RIM_OBLIQUE.view1.toFixed(2)}, vViewX);
-  float open = mix(uRimPower, ${RIM_OBLIQUE.open.toFixed(2)}, oblique * clamp(vKante, 0.0, 1.0));
+  float k = clamp(vKante, 0.0, 1.0);
+  float band = clamp(vBand, 0.0, 1.0);
+  float calfOpen = mix(uRimPower, ${RIM_OBLIQUE.open.toFixed(2)}, oblique * k);
+  float bodyOpen = mix(${RIM_BODY.front.toFixed(2)}, ${RIM_BODY.oblique.toFixed(2)}, oblique);
+  // Calf mark keeps the #34 mix. Body widens only where that mark is off.
+  float open = mix(calfOpen, bodyOpen, band * (1.0 - k));
   float fres = pow(grazing, open);
   float spine = exp(-abs(vW.x) * uSpineTight)
     * smoothstep(0.62, 1.04, vW.y)
@@ -121,13 +146,69 @@ function smoothstep01(edge0: number, edge1: number, x: number) {
 }
 
 /** Same lobe as `glassFrag`. Spine and star are torso-only and stay out. */
-export function calfRimAlpha(ndot: number, kante: number, viewX: number, fade = 1) {
+export function calfRimAlpha(
+  ndot: number,
+  kante: number,
+  viewX: number,
+  fade = 1,
+  band = 0,
+) {
   const grazing = Math.min(1, Math.max(0, 1 - Math.abs(ndot)));
   const oblique = smoothstep01(RIM_OBLIQUE.view0, RIM_OBLIQUE.view1, Math.abs(viewX));
   const k = Math.min(1, Math.max(0, kante));
-  const open = LOCK.glass.rimPower + (RIM_OBLIQUE.open - LOCK.glass.rimPower) * oblique * k;
+  const b = Math.min(1, Math.max(0, band));
+  const calfOpen =
+    LOCK.glass.rimPower + (RIM_OBLIQUE.open - LOCK.glass.rimPower) * oblique * k;
+  const bodyOpen = RIM_BODY.front + (RIM_BODY.oblique - RIM_BODY.front) * oblique;
+  const open = calfOpen + (bodyOpen - calfOpen) * b * (1 - k);
   const fres = grazing ** open;
   return (fres * LOCK.glass.rim + LOCK.glass.fill) * fade;
+}
+
+/**
+ * Object-space normal the glass vertex shader uses for a calf mark.
+ * Frontal view keeps the authored normal. A yaw bends each head onto the
+ * view plane so the far head grazes without lighting the front.
+ */
+export function bendCalfNormal(
+  nx: number,
+  ny: number,
+  nz: number,
+  x: number,
+  viewX: number,
+  viewY: number,
+  viewZ: number,
+  kante: number,
+) {
+  const k = Math.min(1, Math.max(0, kante));
+  const vlen = Math.hypot(viewX, viewY, viewZ) || 1;
+  const ox = viewX / vlen;
+  const oy = viewY / vlen;
+  const oz = viewZ / vlen;
+  const oblique = smoothstep01(RIM_OBLIQUE.view0, RIM_OBLIQUE.view1, Math.abs(ox));
+  const bl = Math.hypot(x * 5.5, 0, -1) || 1;
+  const bnx = (x * 5.5) / bl;
+  const bnz = -1 / bl;
+  const dot = bnx * ox + bnz * oz;
+  let gx = bnx - ox * dot;
+  let gy = 0 - oy * dot;
+  let gz = bnz - oz * dot;
+  const gl = Math.hypot(gx, gy, gz);
+  if (gl > 0.001) {
+    gx /= gl;
+    gy /= gl;
+    gz /= gl;
+  } else {
+    gx = nx;
+    gy = ny;
+    gz = nz;
+  }
+  const w = oblique * k * 0.82;
+  const mx = nx * (1 - w) + gx * w;
+  const my = ny * (1 - w) + gy * w;
+  const mz = nz * (1 - w) + gz * w;
+  const ml = Math.hypot(mx, my, mz) || 1;
+  return { x: mx / ml, y: my / ml, z: mz / ml };
 }
 
 const coreFrag = /* glsl */ `
@@ -380,9 +461,13 @@ function solid(parent: THREE.Object3D, geo: THREE.BufferGeometry, material: THRE
     fade.fill(1);
     geo.setAttribute("aFade", new THREE.Float32BufferAttribute(fade, 1));
   }
-  // Shared glass shader. Zero keeps the frontal rim. The calf overwrites this.
+  // Shared glass shader. Zero keeps the frontal rim. The calf overwrites aKante.
   if (!geo.getAttribute("aKante")) {
     geo.setAttribute("aKante", new THREE.Float32BufferAttribute(new Float32Array(count), 1));
+  }
+  // Zero keeps the locked frontal exponent. Torso and limbs opt into the body band.
+  if (!geo.getAttribute("aBand")) {
+    geo.setAttribute("aBand", new THREE.Float32BufferAttribute(new Float32Array(count), 1));
   }
   geo.computeVertexNormals();
   const mesh = new THREE.Mesh(geo, material);
@@ -536,14 +621,49 @@ function shinSection(t: number, a: number, r: number, side: 1 | -1) {
 }
 
 /**
+ * Glass calf. Filaments stay on `shinSection` (slave track).
+ * Two posterior lobes, lateral higher and medial lower, with the shared
+ * gut pulled forward between them so a yawed outline can notch.
+ * The quiet flank narrows while the other head is up, which lets the far
+ * head reach the silhouette. The rise is a long hermite so the band does
+ * not leave the knee on a corner.
+ */
+function shinGlass(t: number, a: number, r: number, side: 1 | -1) {
+  const base = shinSection(t, a, r, side);
+  const c = Math.cos(a);
+  const outward = side * c;
+  const back = Math.max(0, -Math.sin(a));
+  const rise = hermite(0.04, 0.4, t) * (1 - hermite(0.78, 0.96, t));
+  const latT = Math.exp(-((t - 0.42) ** 2) / 0.016);
+  const medT = Math.exp(-((t - 0.6) ** 2) / 0.012);
+  const lat = Math.exp(-((outward - 0.38) ** 2) / 0.055) * back;
+  const med = Math.exp(-((outward + 0.46) ** 2) / 0.06) * back;
+  const mid = Math.exp(-((t - 0.5) ** 2) / 0.013);
+  const fused = Math.exp(-((Math.abs(outward) - 0.6) ** 2) / 0.11) * back * mid;
+  const quiet =
+    (Math.max(0, outward) * (1 - latT) + Math.max(0, -outward) * (1 - medT)) * (0.4 + 0.6 * back);
+  const x = base.x - c * quiet * r * 0.24;
+  const z = base.z - (lat * latT * 0.85 + med * medT * 1.15) * rise * r + fused * r * 0.28;
+  return { x, z };
+}
+
+/** Wider Fresnel on torso and limbs. Skull and the unmarked glass stay at 0. */
+function markBodyRim(mesh: THREE.Mesh) {
+  const count = mesh.geometry.getAttribute("position").count;
+  const band = new Float32Array(count);
+  band.fill(1);
+  mesh.geometry.setAttribute("aBand", new THREE.Float32BufferAttribute(band, 1));
+  return mesh;
+}
+
+/**
  * Posterior calf rim for a yawed figure.
- * Smooth normals on the belly point into the leg, so the oblique rear never
- * grazes. Each posterior vertex gets an air normal that fans out from the
- * sulcus: pure back on the floor, a few degrees outward on each head. The
- * fan follows x, so the highlight is a curve and not one flat card. Lateral
- * normals stay, which keeps the frontal silhouette. The floor mark stays
- * low so the groove is the dark gap. The wider exponent runs only when the
- * figure is yawed. Skull, fingers and the torso are unmarked.
+ * Each head fans out from the sulcus, so the far head is not the same
+ * backward card as the near one. The floor stays unmarked and dark.
+ * The blend follows a long hermite down the leg: a hard ring start was
+ * the corner at the top of the band. Lateral normals fade out instead of
+ * being cut, so the band meets the side silhouette on a curve.
+ * The wider calf exponent still runs only when the figure is yawed.
  */
 function tuneCalfRim(geo: THREE.BufferGeometry, seg: number) {
   const pos = geo.getAttribute("position");
@@ -552,32 +672,36 @@ function tuneCalfRim(geo: THREE.BufferGeometry, seg: number) {
   if (!nrm || pos.count % row !== 0) return;
   const rings = pos.count / row;
   const kante = new Float32Array(pos.count);
-  const maxTilt = 0.42;
   for (let i = 0; i < rings; i++) {
+    const t = i / Math.max(1, rings - 1);
+    const along = hermite(0.02, 0.58, t) * (1 - hermite(0.8, 0.96, t));
     let minZ = Infinity;
     for (let j = 0; j < row; j++) minZ = Math.min(minZ, pos.getZ(i * row + j));
-    // Fade the belly in. A hard ring start reads as a corner on the rim.
-    const ring = Math.min(1, Math.max(0, (-0.055 - minZ) / 0.045));
-    if (ring < 0.08) continue;
+    const span = Math.min(-0.02, minZ) + 0.012;
     for (let j = 0; j < row; j++) {
       const k = i * row + j;
       const x = pos.getX(k);
       const z = pos.getZ(k);
-      const back = Math.min(1, Math.max(0, (-0.04 - z) / (-0.04 - minZ)));
-      const fade = back * ring;
-      if (fade < 0.18) continue;
-      const nx0 = nrm.getX(k);
+      const depth = span < -1e-4 ? Math.min(1, Math.max(0, (z + 0.012) / span)) : 0;
+      const post = hermite(0.18, 0.75, depth);
       const ny0 = nrm.getY(k);
-      const nz0 = nrm.getZ(k);
-      if (Math.abs(nx0) > 0.72 && Math.abs(nx0) > Math.abs(nz0)) continue;
-      const floor = Math.abs(x) < 0.008;
-      const ang = Math.max(-maxTilt, Math.min(maxTilt, (x / 0.11) * fade));
-      const nx = Math.sin(ang);
-      const ny = Math.max(-0.2, Math.min(0.2, ny0 * 0.35));
-      const nz = -Math.cos(ang);
-      const len = Math.hypot(nx, ny, nz) || 1;
-      nrm.setXYZ(k, nx / len, ny / len, nz / len);
-      kante[k] = (floor ? 0.1 : 0.35 + 0.65 * fade) * ring;
+      const spread = Math.min(1, Math.abs(x) / 0.05);
+      // Sulcus floor stays dark. The fade is a hermite, not a cut, so the
+      // band does not start on a corner.
+      const offFloor = hermite(0.008, 0.028, Math.abs(x));
+      const ang = Math.sign(x || 1) * spread * 0.62 * post;
+      const ax = Math.sin(ang);
+      const az = -Math.cos(ang);
+      // Floor included, so the groove faces back and stays the dark gap.
+      const use = along * post;
+      if (use > 0.04) {
+        const nx = ax * use;
+        const ny = ny0 * (1 - use) * 0.35;
+        const nz = az * use + nrm.getZ(k) * (1 - use) * 0.15;
+        const len = Math.hypot(nx, ny, nz) || 1;
+        nrm.setXYZ(k, nx / len, ny / len, nz / len);
+      }
+      kante[k] = along * post * offFloor * (0.55 + 0.45 * spread);
     }
   }
   geo.setAttribute("aKante", new THREE.Float32BufferAttribute(kante, 1));
@@ -1773,7 +1897,7 @@ function shinTubeRadius(t: number) {
 }
 
 /**
- * Cross-section of the calf glass, read from `shinSection`.
+ * Filament cross-section. Still `shinSection`, not the glass lobes.
  * Lateral head, medial head, and the posterior groove, each inset off the rim.
  */
 function calfFrame(t: number, side: 1 | -1) {
@@ -2177,7 +2301,7 @@ export function createKushim(): Rig {
     28,
   );
   fadeTorsoSides(torsoGeo);
-  const torso = solid(chest, torsoGeo, glass);
+  const torso = markBodyRim(solid(chest, torsoGeo, glass));
   torso.scale.set(SHELL_SX, 1, 0.72);
   torso.userData.lockKey = "torso";
 
@@ -2268,8 +2392,8 @@ export function createKushim(): Rig {
     const shoulder = new THREE.Group();
     shoulder.position.set(side * P.shoulderX, P.shoulderLocalY, 0);
     chest.add(shoulder);
-    solid(chest, shoulderSlope(side), glass);
-    const upperMesh = solid(
+    markBodyRim(solid(chest, shoulderSlope(side), glass));
+    const upperMesh = markBodyRim(solid(
       shoulder,
       organicTube(
         UPPER_RADII,
@@ -2281,7 +2405,7 @@ export function createKushim(): Rig {
         { bury: true, hug: true, section: upperSection },
       ),
       glass,
-    );
+    ));
     const upperN = emptyRibbon();
     fillLimb(
       upperN,
@@ -2300,14 +2424,14 @@ export function createKushim(): Rig {
     const elbow = new THREE.Group();
     elbow.position.y = -P.upperArm;
     shoulder.add(elbow);
-    solid(elbow, jointBridge(LIMB.fore.r0, BLEND.elbow), glass);
-    const foreMesh = solid(
+    markBodyRim(solid(elbow, jointBridge(LIMB.fore.r0, BLEND.elbow), glass));
+    const foreMesh = markBodyRim(solid(
       elbow,
       organicTube(FORE_RADII, P.foreArm, side, 0, BLEND.elbow, 0, {
         join: "child",
       }),
       glass,
-    );
+    ));
     const foreN = emptyRibbon();
     fillLimb(foreN, P.foreArm, FORE_RADII, 0.07, 0.00009, 0.42, side * 2.1, side);
     commitRibbon(elbow, foreN, nerve);
@@ -2315,7 +2439,7 @@ export function createKushim(): Rig {
     const wrist = new THREE.Group();
     wrist.position.y = -P.foreArm;
     elbow.add(wrist);
-    const palm = solid(
+    const palm = markBodyRim(solid(
       wrist,
       new THREE.LatheGeometry(
         [
@@ -2327,7 +2451,7 @@ export function createKushim(): Rig {
         10,
       ),
       glass,
-    );
+    ));
     palm.scale.set(1.15, 1, 0.42);
     palm.position.set(0, -0.01, 0.01);
     const fingers: THREE.Group[] = [];
@@ -2398,7 +2522,7 @@ export function createKushim(): Rig {
     hip.userData.lockSide = side;
     hip.position.set(side * HIP_X, P.hipY, 0);
     root.add(hip);
-    const thighMesh = solid(
+    const thighMesh = markBodyRim(solid(
       hip,
       organicTube(
         THIGH_RADII,
@@ -2409,7 +2533,7 @@ export function createKushim(): Rig {
         BLEND.knee,
       ),
       glass,
-    );
+    ));
     const hipN = emptyRibbon();
     fillLimb(
       hipN,
@@ -2428,13 +2552,13 @@ export function createKushim(): Rig {
     knee.userData.lockKey = "knee";
     knee.position.y = -P.thigh;
     hip.add(knee);
-    solid(knee, jointBridge(LIMB.shin.r0, BLEND.knee), glass);
+    markBodyRim(solid(knee, jointBridge(LIMB.shin.r0, BLEND.knee), glass));
     const shinGeo = organicTube(SHIN_RADII, P.shin, side, 0, BLEND.knee, 0.035, {
       join: "child",
       seg: 56,
-      section: (t, a, r) => shinSection(t, a, r, side),
+      section: (t, a, r) => shinGlass(t, a, r, side),
     });
-    solid(knee, shinGeo, glass);
+    markBodyRim(solid(knee, shinGeo, glass));
     tuneCalfRim(shinGeo, 56);
     const shinN = emptyRibbon();
     fillCalf(shinN, side);
@@ -2447,7 +2571,7 @@ export function createKushim(): Rig {
     const foot = new THREE.Group();
     ankle.add(foot);
     const shaped = footLathe();
-    const footMesh = solid(foot, shaped.geo, glass);
+    const footMesh = markBodyRim(solid(foot, shaped.geo, glass));
     const ankleY = P.hipY - P.thigh - P.shin;
     footMesh.position.y = SOLE_KISS - ankleY - shaped.minY;
     const footN = emptyRibbon();
