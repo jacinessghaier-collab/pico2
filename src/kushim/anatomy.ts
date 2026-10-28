@@ -1166,15 +1166,16 @@ function arcBetween(
 }
 
 function fillTorso(ribbon: Ribbon) {
-  // Forked plexus inside the current lathe. Radii are read, not retuned.
-  // Chest is the fiber mass: short forks and local weaves. Inset. No sternum ball.
+  // Forked plexus inside the current lathe, plus a short fiber mass in the chest.
+  // Radii are read, not retuned. Every sample is pulled onto an inset ellipse so
+  // the bow cannot lay lime on the cyan rim. No sternum ball, no thicker strokes.
   const hair = 0.000175;
   const twigW = 0.00012;
   let seed = 11;
   const h = () => unitHash(seed++);
   const yLo = -0.32;
   const yHi = 0.4;
-  const inset = 0.88;
+  const inset = 0.8;
   const box = (y: number) => {
     const r = shellRadius(Math.max(-0.34, Math.min(0.5, y)));
     return {
@@ -1218,20 +1219,7 @@ function fillTorso(ribbon: Ribbon) {
     const [ax, az] = fit(x0, z0, yA);
     const [bx, bz] = fit(x1, z1, yB);
     if (Math.hypot(bx - ax, yB - yA) < 0.008) return null;
-    arcBetween(
-      ribbon,
-      ax,
-      yA,
-      az,
-      bx,
-      yB,
-      bz,
-      (h() - 0.5) * 0.012,
-      rank,
-      width,
-      gain,
-      warm,
-    );
+    insideArc(ax, yA, az, bx, yB, bz, (h() - 0.5) * 0.012, rank, width, gain, warm);
     const end: [number, number, number] = [bx, yB, bz];
     nodes.push(end);
     budget.n += 1;
@@ -1381,8 +1369,7 @@ function fillTorso(ribbon: Ribbon) {
       if (!chest && h() > 0.5) continue;
       const d = Math.hypot(x2 - x, y2 - y, (z2 - z) * 1.4);
       if (d < 0.008 || d > (chest ? 0.05 : 0.038)) continue;
-      arcBetween(
-        ribbon,
+      insideArc(
         x,
         y,
         z,
@@ -1397,6 +1384,132 @@ function fillTorso(ribbon: Ribbon) {
       );
       links += 1;
       local += 1;
+    }
+  }
+
+  layFiberMass();
+
+  function fit(x: number, z: number, y: number) {
+    const b = box(y);
+    const e = (x * x) / (b.x * b.x) + (z * z) / (b.z * b.z);
+    if (e <= 1) return [x, z] as const;
+    const s = 0.98 / Math.sqrt(e);
+    return [x * s, z * s] as const;
+  }
+
+  /** Bowed chord with every sample kept on the inset ellipse. */
+  function insideArc(
+    ax: number,
+    ay: number,
+    az: number,
+    bx: number,
+    by: number,
+    bz: number,
+    bend: number,
+    rank: number,
+    width: number,
+    gain: number,
+    warm: number,
+  ) {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len = Math.hypot(dx, dy);
+    if (len < 0.004) return;
+    const px = (-dy / len) * bend;
+    const py = (dx / len) * bend;
+    pushCurve(
+      ribbon,
+      5,
+      (u) => {
+        const o = Math.sin(u * Math.PI);
+        const y = Math.max(yLo, Math.min(yHi, ay + dy * u + py * o));
+        const [x, z] = fit(ax + dx * u + px * o, az + (bz - az) * u, y);
+        return new THREE.Vector3(x, y, z);
+      },
+      Math.min(0.82, Math.max(0.02, rank)),
+      width,
+      gain,
+      warm,
+      0.3,
+      0,
+    );
+  }
+
+  /**
+   * Short lime fibers through the torso volume. The chest carries the solid
+   * mass; the column below is the same web, thinner. Strokes stay hair-width.
+   */
+  function layFiberMass() {
+    let n = 4400;
+    const h2 = () => unitHash(n++);
+    const chord = (
+      x0: number,
+      y0: number,
+      z0: number,
+      x1: number,
+      y1: number,
+      z1: number,
+      gain: number,
+      warm: number,
+    ) => {
+      const yA = Math.max(yLo, Math.min(yHi, y0));
+      const yB = Math.max(yLo, Math.min(yHi, y1));
+      const [ax, az] = fit(x0, z0, yA);
+      const [bx, bz] = fit(x1, z1, yB);
+      if (Math.hypot(bx - ax, yB - yA) < 0.006) return;
+      insideArc(
+        ax,
+        yA,
+        az,
+        bx,
+        yB,
+        bz,
+        (h2() - 0.5) * 0.008,
+        0.05 + (n % 6) * 0.012,
+        hair,
+        gain,
+        warm,
+      );
+    };
+    const scatter = (y: number, reach: number, len: number, gain: number, warm: number) => {
+      const b = box(y);
+      const ang = h2() * Math.PI * 2;
+      const rad = Math.sqrt(h2()) * 0.96 * reach;
+      const x = Math.cos(ang) * b.x * rad;
+      const z = Math.sin(ang) * b.z * rad;
+      const roll = h2();
+      let dx: number;
+      let dy: number;
+      let dz: number;
+      if (roll < 0.44) {
+        const s = h2() < 0.5 ? -1 : 1;
+        dx = (h2() - 0.5) * len * 0.65;
+        dy = s * len;
+        dz = (h2() - 0.5) * len * 0.32;
+      } else if (roll < 0.76) {
+        const a = (h2() - 0.5) * 2.6;
+        dx = Math.sin(a) * len;
+        dy = Math.cos(a) * len * (0.5 + h2() * 0.45);
+        dz = (h2() - 0.5) * len * 0.36;
+      } else {
+        const s = h2() < 0.5 ? -1 : 1;
+        dx = s * len;
+        dy = (h2() - 0.5) * len * 0.4;
+        dz = (h2() - 0.5) * len * 0.28;
+      }
+      chord(x, y, z, x + dx, y + dy, z + dz, gain, warm);
+    };
+
+    // Dim on purpose. Additive overlap is the solid; a hotter gain clips to a white block.
+    for (let i = 0; i < 2800; i++) {
+      const y = h2() < 0.78 ? 0.17 + (h2() + h2() - 1) * 0.12 : 0.03 + h2() * 0.28;
+      const len = 0.016 + h2() * 0.028;
+      scatter(y, 1, len, 0.1 + h2() * 0.08, 0.2 + h2() * 0.12);
+    }
+    for (let i = 0; i < 1600; i++) {
+      const y = -0.22 + h2() * 0.28;
+      const len = 0.016 + h2() * 0.024;
+      scatter(y, 0.94, len, 0.09 + h2() * 0.07, 0.18 + h2() * 0.1);
     }
   }
 }
@@ -1415,7 +1528,7 @@ function upperAxis(side: 1 | -1) {
 
 /** Inset of the round upper-arm tube. Keeps lime off the glass rim. */
 function upperFilamentBounds(u: number) {
-  const rad = upperGlass(upperGlassT(u)).r * 0.72;
+  const rad = upperGlass(upperGlassT(u)).r * 0.66;
   return { rx: rad, rz: rad };
 }
 
@@ -1436,8 +1549,8 @@ function fillLimb(
   const h = () => unitHash(n++);
   const flat = 0.8;
   const axis = axisX ?? (() => 0);
-  const reachX = (u: number) => bounds?.(u).rx ?? radiusAt(radii, u) * 0.76;
-  const reachZ = (u: number) => bounds?.(u).rz ?? radiusAt(radii, u) * flat * 0.76;
+  const reachX = (u: number) => bounds?.(u).rx ?? radiusAt(radii, u) * 0.7;
+  const reachZ = (u: number) => bounds?.(u).rz ?? radiusAt(radii, u) * flat * 0.7;
   const clamp = (v: number, reach: number) => Math.max(-reach, Math.min(reach, v));
   const mean = radii.reduce((sum, r) => sum + r, 0) / Math.max(1, radii.length);
   const laneCount = mean > 0.055 ? 3 : 2;
@@ -1466,7 +1579,7 @@ function fillLimb(
     pushCurve(ribbon, 14, (u) => point(u, lane), Math.min(0.8, rank), width, gain * 0.62, 0.3, 0.22);
   }
 
-  const twigs = Math.round(36 + length * 96 + mean * 240);
+  const twigs = Math.round(48 + length * 120 + mean * 280);
   for (let s = 0; s < 5; s++) {
     const lane = lanes[s % lanes.length];
     const t0 = 0.06 + h() * 0.45;
@@ -1518,7 +1631,7 @@ function fillLimb(
       0.2,
       0.5,
     );
-    if (h() < 0.42) {
+    if (h() < 0.5) {
       const fdir = dir + (h() < 0.5 ? 0.7 : -0.7);
       const fx = axis(t0) + clamp(Math.cos(fdir) * rx * span * 0.62, rx);
       const fz = clamp(Math.sin(fdir) * rz * span * 0.4, rz);

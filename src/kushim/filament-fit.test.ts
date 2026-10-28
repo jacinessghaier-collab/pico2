@@ -96,10 +96,93 @@ function overflow(point: { x: number; y: number; z: number }, glass: Array<{ x: 
   return rad - ray;
 }
 
+/**
+ * Centerline radius over the lathe surface at the same height.
+ * Rings are read off the torso mesh and lerped, so a taper is not scored
+ * against a narrower neighbor. 1 sits on the glass.
+ */
+function shellRatio(
+  point: { x: number; y: number; z: number },
+  rings: Array<{ y: number; pts: Array<{ x: number; z: number }> }>,
+) {
+  if (rings.length < 2) return 0;
+  let i = 0;
+  while (i < rings.length - 2 && rings[i + 1].y < point.y) i += 1;
+  const a = rings[i];
+  const b = rings[Math.min(rings.length - 1, i + 1)];
+  const span = b.y - a.y;
+  const t = span < 1e-6 ? 0 : Math.min(1, Math.max(0, (point.y - a.y) / span));
+  const rayOf = (ring: { pts: Array<{ x: number; z: number }> }) => {
+    let cx = 0;
+    let cz = 0;
+    for (const p of ring.pts) {
+      cx += p.x;
+      cz += p.z;
+    }
+    cx /= ring.pts.length;
+    cz /= ring.pts.length;
+    const dx = point.x - cx;
+    const dz = point.z - cz;
+    const rad = Math.hypot(dx, dz);
+    if (rad < 1e-5) return { rad: 0, ray: 1 };
+    const ang = Math.atan2(dz, dx);
+    const c = Math.cos(ang);
+    const s = Math.sin(ang);
+    let ray = 0;
+    for (const q of ring.pts) {
+      const dot = (q.x - cx) * c + (q.z - cz) * s;
+      if (dot > ray) ray = dot;
+    }
+    return { rad, ray: Math.max(ray, 1e-4) };
+  };
+  const left = rayOf(a);
+  const right = rayOf(b);
+  const rad = left.rad * (1 - t) + right.rad * t;
+  const ray = left.ray * (1 - t) + right.ray * t;
+  return rad / ray;
+}
+
 describe("filament fit", () => {
   let rig: Rig;
   before(() => {
     rig = createKushim();
+  });
+
+  it("fills the chest and keeps torso centerlines off the cyan rim", () => {
+    const torso = rig.chest.children.find((child) => child.userData.lockKey === "torso") as Mesh | undefined;
+    if (!torso) throw new Error("torso glass missing");
+    const pos = torso.geometry.getAttribute("position");
+    const byY = new Map<number, Array<{ x: number; z: number }>>();
+    for (let i = 0; i < pos.count; i++) {
+      const y = Math.round(pos.getY(i) * torso.scale.y * 10000) / 10000;
+      const list = byY.get(y);
+      const p = { x: pos.getX(i) * torso.scale.x, z: pos.getZ(i) * torso.scale.z };
+      if (list) list.push(p);
+      else byY.set(y, [p]);
+    }
+    const rings = [...byY.entries()]
+      .map(([y, pts]) => ({ y, pts }))
+      .sort((a, b) => a.y - b.y);
+    const nerves = nervePoints(rig.chest, rig.nerve);
+    assert.ok(nerves.length > 18000, `torso centerlines ${nerves.length}`);
+    const chest = nerves.filter((p) => p.y >= 0.06 && p.y <= 0.3);
+    assert.ok(chest.length > 18000, `chest centerlines ${chest.length}, was a sparse web`);
+    let worst = 0;
+    let kissed = 0;
+    const ratios: number[] = [];
+    for (const p of nerves) {
+      const ratio = shellRatio(p, rings);
+      if (ratio <= 0) continue;
+      ratios.push(ratio);
+      worst = Math.max(worst, ratio);
+      if (ratio > 0.84) kissed += 1;
+    }
+    assert.ok(ratios.length > 1000, `torso samples against the glass ${ratios.length}`);
+    ratios.sort((a, b) => a - b);
+    const mid = ratios[Math.floor(ratios.length / 2)] ?? 0;
+    assert.ok(worst <= 0.84, `torso centerline reaches ${worst} of the glass`);
+    assert.equal(kissed, 0, `${kissed} centerlines sit on the rim`);
+    assert.ok(mid >= 0.35 && mid <= 0.65, `chest mass collapsed or rode the rim, median ${mid}`);
   });
 
   it("keeps upper-arm filaments inside the shoulder-fit tube", () => {
