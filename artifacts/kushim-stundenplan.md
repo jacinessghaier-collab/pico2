@@ -14,8 +14,8 @@ Die laufende App schaltet dieselben Stufen schon über die Echtzeit seit dem ers
 
 ## Schon in der App
 
-Atem, Rückkanal beim Tippen, Einatmen vor dem Wort, Sätze mit Pause, Gedächtnis der letzten Züge, Schulter nur auf Ansprache, Reparatur, langsameres Gewicht, Leo-Stimme mit Browser-Ersatz, Gesten idle/listen/think/speak/explain/acknowledge/empathize.
+Atem, Rückkanal beim Tippen, Einatmen vor dem Wort, Sätze mit Pause, Gedächtnis der letzten Züge plus Schlüssel und ein kurzer älterer Faden, Schulter nur auf Ansprache, Reparatur, langsameres Gewicht, Leo-Stimme mit Browser-Ersatz, Gesten idle/listen/think/speak/explain/acknowledge/empathize.
 
 Name höchstens einmal und nie erzwungen. Unterbrechung bricht den gesprochenen Satz ab (`trimInterrupted`), die nächste Antwort gilt dem neuen Thema. Rückfrage nur bei offenem Satz. Bei „nicht verstanden“ derselbe Inhalt in einem Satz, ohne Entschuldigung. Lippen: Viseme aa/ih/ou/ee/oh, bei Leo aus den Frequenzbändern, sonst im Texttakt. Blick mit Lerp 0,10. Blinzeln beider Augen ohne Silbenkopplung.
 
-Bau: Stufe 8 von 10 erledigt, nächste Stufe ist Sprache (Satzmelodie). Stundenpipeline: Schritt 4 Lippensynchron steht, nächster Schritt ist das Gedächtnis über den Gesprächsausschnitt hinaus. Marker: `src/kushim/stand.ts`.
+Bau: Stufe 8 von 10 erledigt, nächste Stufe ist Sprache (Satzmelodie). Stundenpipeline: Schritt 5 Gedächtnis steht in `src/kushim/memory.ts` (Wohnort, Herkunft, Arbeit, Sprache, Mag, Bezug, Merken, plus Thema aus Zügen außerhalb des Fensters). Nächster Schritt ist die Mundöffnung gegen den Atem. Marker: `src/kushim/stand.ts`.

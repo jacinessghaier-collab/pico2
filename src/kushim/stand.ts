@@ -104,12 +104,20 @@ export const CHANGES: Change[] = [
     body: "Viseme aa, ih, ou, ee, oh auf dem vorhandenen Mund. Leo über die Frequenzbänder, sonst der Texttakt. Blick mit Lerp 0.10. Blinzeln 3,6 bis 6,4 Sekunden, beide Augen, ohne Kopplung an die Silbe. three-vrm-lip-sync entfällt: dieses Rig hat keine Blendshapes.",
     source: "Stundenplan",
   },
+  {
+    id: "memory",
+    time: "04:20",
+    step: null,
+    title: "Gedächtnis",
+    body: "Neben dem Namen bleiben wenige Schlüssel und ein kurzes Thema aus Zügen, die aus dem Fenster gefallen sind. Der Systemtext bekommt das einmal, ohne das ganze Protokoll.",
+    source: "Stundenplan",
+  },
 ];
 
 export const DONE_STEP = 8;
 export const NEXT_STEP = 9;
 export const NEXT_RUN_LABEL = "04:00";
 
-/** Hourly pipeline. Step 4 lip-sync is in the live scene. */
-export const HOURLY_DONE = 4;
-export const HOURLY_NEXT = 5;
+/** Hourly pipeline. Step 5 memory is in the live dialogue. */
+export const HOURLY_DONE = 5;
+export const HOURLY_NEXT = 6;

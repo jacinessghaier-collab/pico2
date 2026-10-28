@@ -44,14 +44,25 @@ export function loadName(): string {
   return (localStorage.getItem(NAME) ?? "").slice(0, 24);
 }
 
+const NAME_RE =
+  /(?:ich hei(?:ß|ss)e|mein name ist|i am|i'm)\s+([A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß'-]{1,20})/i;
+
+export function nameInText(text: string): string {
+  return text.match(NAME_RE)?.[1] ?? "";
+}
+
 export function rememberName(text: string): string {
-  const match = text.match(/(?:ich hei(?:ß|ss)e|mein name ist|i am|i'm)\s+([A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß'-]{1,20})/i);
-  if (!match) return loadName();
-  const name = match[1];
+  const name = nameInText(text);
+  if (!name) return loadName();
   localStorage.setItem(NAME, name);
   return name;
 }
-  export function loadVoice(): { on: boolean; leo: boolean } {
+
+export function clearName() {
+  if (typeof localStorage === "undefined") return;
+  localStorage.removeItem(NAME);
+}
+export function loadVoice(): { on: boolean; leo: boolean } {
   if (typeof localStorage === "undefined") return { on: true, leo: true };
   const raw = localStorage.getItem(VOICE);
   if (raw === "off") return { on: false, leo: false };
