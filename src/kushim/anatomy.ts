@@ -374,8 +374,8 @@ function shellRadius(localY: number) {
 /** How far the upper-arm silhouette sits outside the torso. Small at the axilla. */
 function armProtrusion(along: number) {
   const t = Math.min(1, Math.max(0, along));
-  const cap = Math.sin(Math.min(1, t / 0.28) * Math.PI);
-  return 0.008 + cap * cap * 0.055 + t * t * 0.02;
+  // No early cap. That bulge was the hard lateral edge on the deltoid.
+  return 0.005 + t * t * 0.02;
 }
 
 /** Chest-local lateral center of the hugged upper arm. */
@@ -388,7 +388,8 @@ function hugCenter(chestLocalY: number, radius: number) {
 
 /**
  * Upper-arm axis in chest space. The root stays buried in the axilla.
- * Below the deltoid the bone hangs at the shoulder so the biceps keeps its girth.
+ * Below the deltoid the whole tube hangs under the shoulder line, so the
+ * biceps is a limb and not a rim stuck to the chest.
  */
 function upperCenter(t: number) {
   const u = Math.min(1, Math.max(0, t));
@@ -396,10 +397,45 @@ function upperCenter(t: number) {
   const tubeY = BLEND.shoulder * (1 - u) - LOCK.proportions.upperArm * u;
   const y = LOCK.proportions.shoulderLocalY + tubeY;
   const hugged = hugCenter(y, r);
-  // Hang under the deltoid. A lateral shove at the root reads as a wing.
-  const hang = LOCK.proportions.shoulderX + r * 0.12;
-  const hold = 1 - hermite(0.2, 0.5, u);
-  return { r, y, center: hugged * hold + hang * (1 - hold) };
+  const shoulderHalf = shellRadius(LOCK.proportions.shoulderLocalY) * SHELL_SX;
+  // Outer rim stays with the shoulder. The radius is small enough that the
+  // inner rim clears the ribs, so the arm is a tube and not a buried cap.
+  const line = shoulderHalf + 0.034;
+  const free = line - r;
+  const hold = 1 - hermite(0.12, 0.4, u);
+  let center = hugged * hold + free * (1 - hold);
+  const toElbow = hermite(0.62, 0.96, u);
+  center = center * (1 - toElbow) + LOCK.proportions.shoulderX * toElbow;
+  return { r, y, center };
+}
+
+/** Round upper arm. A flat ellipse puts a hard rim on the lateral pole. */
+function upperSection(t: number, a: number, r: number) {
+  const belly = Math.exp(-((t - 0.5) ** 2) / 0.07);
+  const s = Math.sin(a);
+  const depth = 0.98 + (s > 0 ? 0.06 * belly : 0.03 * belly);
+  return { x: Math.cos(a) * r, z: s * r * depth };
+}
+
+/**
+ * Calf cross-section. The tibia stays near the bone; the gastrocnemius
+ * swells behind it just under the knee, then the Achilles thins.
+ */
+function shinSection(t: number, a: number, r: number, side: 1 | -1) {
+  const s = Math.sin(a);
+  // High belly, then the tendon. Equal front and back is the lathe vase.
+  const belly = Math.exp(-((t - 0.52) ** 2) / 0.032);
+  const risen = hermite(0.4, 0.52, t) * (1 - hermite(0.68, 0.86, t));
+  const mass = belly * risen;
+  const front = Math.max(0, s);
+  const back = Math.max(0, -s);
+  const lateral = Math.max(0, side * Math.cos(a));
+  const x = Math.cos(a) * r * (0.9 + 0.04 * mass) + side * lateral * r * 0.1 * mass;
+  const z =
+    front ** 1.45 * r * (0.46 + 0.24 * (1 - mass)) -
+    back ** 0.7 * r * (0.76 + 0.95 * mass) -
+    r * 0.18 * mass;
+  return { x, z };
 }
 
 /** 0 inside the torso glass, 1 once the vertex clears the skin. */
@@ -422,6 +458,8 @@ type TubeOpts = {
   join?: "child";
   /** Keep the outer rim against the torso through the axilla. */
   hug?: boolean;
+  /** Local XZ of the ring. Default is the flat limb ellipse. */
+  section?: (t: number, angle: number, radius: number) => { x: number; z: number };
 };
 
 /**
@@ -469,8 +507,11 @@ function organicTube(
     }
     for (let j = 0; j <= seg; j++) {
       const a = (j / seg) * Math.PI * 2;
-      const x = Math.cos(a) * r + bias;
-      const z = Math.sin(a) * r * 0.8;
+      const local = opts?.section
+        ? opts.section(t, a, r)
+        : { x: Math.cos(a) * r, z: Math.sin(a) * r * 0.8 };
+      const x = local.x + bias;
+      const z = local.z;
       let ring = cover;
       if (bury) ring *= skinFade(side * shoulderX + x, shoulderY + y, z);
       pos.push(x, y, z);
@@ -538,17 +579,21 @@ function fadeTorsoSides(geo: THREE.BufferGeometry) {
     const y = pos.getY(i);
     const z = pos.getZ(i) * 0.72;
     let cover = 1;
-    // Axilla only. Fading the chest below it ate the pec rim and inverted the taper.
-    if (y < yTop + 0.06 && y > yTop - 0.1) {
+    // Only the shell the arm already covers. The front of the chest stays,
+    // so the pec rim does not invert.
+    const yBot = yTop - P.upperArm;
+    if (y < yTop + 0.04 && y > yBot + 0.05) {
       const tubeY = y - yTop;
       const t = (BLEND.shoulder - tubeY) / (BLEND.shoulder + P.upperArm);
-      if (t > -0.02 && t < 0.22) {
+      if (t > 0.02 && t < 0.9) {
         const arm = upperCenter(Math.min(1, Math.max(0, t)));
-        for (const side of [1, -1] as const) {
-          const ex = (x - side * arm.center) / (arm.r * 1.05);
-          const ez = z / (arm.r * 0.95);
-          const inside = ex * ex + ez * ez;
-          if (inside < 1) cover = Math.min(cover, hermite(0.35, 0.95, inside));
+        if (Math.abs(z) < arm.r * 0.5) {
+          for (const side of [1, -1] as const) {
+            const ex = (x - side * arm.center) / (arm.r * 0.92);
+            const ez = z / (arm.r * 0.9);
+            const inside = ex * ex + ez * ez;
+            if (inside < 1) cover = Math.min(cover, hermite(0.08, 0.62, inside));
+          }
         }
       }
     }
@@ -729,14 +774,19 @@ const SHELL_LATHE: Array<[number, number]> = [
 ];
 /** Crossfade length shared by a parent distal end and its child proximal end. */
 const BLEND = { elbow: 0.14, knee: 0.14, shoulder: 0.02, hip: 0.05 };
-/** Deltoid into biceps, then the elbow radius. Root is buried, so this is not a ball. */
-const UPPER_RADII = [0.046, 0.064, 0.086, 0.094, 0.086, 0.068, 0.048, 0.036, 0.034];
+/**
+ * Soft biceps, not a deltoid spike. Root is buried; the last sample matches the elbow.
+ */
+const UPPER_RADII = [0.032, 0.04, 0.048, 0.054, 0.058, 0.052, 0.044, 0.038, 0.034];
 /** Forearm belly sits past the elbow blend. Ends match the wrist. */
 const FORE_RADII = [0.034, 0.036, 0.044, 0.046, 0.04, 0.03, 0.022];
 /** Quad belly, then the knee radius so the bridge stays the same tube. */
 const THIGH_RADII = [0.096, 0.104, 0.106, 0.088, 0.066, 0.048, 0.042, 0.042, 0.042];
-/** Knee radius, calf belly, ankle. The swell starts below the knee blend. */
-const SHIN_RADII = [0.042, 0.044, 0.052, 0.068, 0.088, 0.08, 0.054, 0.034, 0.026];
+/**
+ * Knee, then a high gastrocnemius, then the Achilles.
+ * The posterior belly lives in shinSection; this is the frontal width.
+ */
+const SHIN_RADII = [0.042, 0.044, 0.05, 0.062, 0.074, 0.074, 0.05, 0.034, 0.026];
 const LIMB = {
   upper: { r0: UPPER_RADII[0], r1: UPPER_RADII[UPPER_RADII.length - 1], inset: 0.06 },
   fore: { r0: FORE_RADII[0], r1: FORE_RADII[FORE_RADII.length - 1], inset: 0 },
@@ -1760,7 +1810,7 @@ export function createKushim(): Rig {
         LIMB.upper.inset,
         BLEND.shoulder,
         BLEND.elbow,
-        { bury: true, hug: true },
+        { bury: true, hug: true, section: upperSection },
       ),
       glass,
     );
@@ -1904,6 +1954,7 @@ export function createKushim(): Rig {
       knee,
       organicTube(SHIN_RADII, P.shin, side, 0, BLEND.knee, 0.035, {
         join: "child",
+        section: (t, a, r) => shinSection(t, a, r, side),
       }),
       glass,
     );
