@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import * as THREE from "three";
 import { createKushim } from "@/kushim/anatomy";
+import { noteLiveFrame, resetLiveFrame } from "@/kushim/frame-time";
 import { setGaze } from "@/kushim/lipsync";
 import { LOCK } from "@/kushim/lock";
 import { assertClearLock, assertFrontalCamera, assertRigLock } from "@/kushim/lock-check";
@@ -42,14 +43,17 @@ function Avatar({
   const reported = useRef(false);
 
   useEffect(() => {
+    resetLiveFrame();
     scene.add(rig.root);
     return () => {
       scene.remove(rig.root);
       rig.dispose();
+      resetLiveFrame();
     };
   }, [scene, rig]);
 
   useFrame((_, delta) => {
+    noteLiveFrame(delta);
     const dt = Math.min(delta, 0.05);
     elapsed.current += dt;
     setGaze(pointer.x, pointer.y);

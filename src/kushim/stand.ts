@@ -129,12 +129,20 @@ export const CHANGES: Change[] = [
     body: "Die Mundöffnung folgt dem vorhandenen Atem. Lautstärke setzt die Stärke, das Einatmen nimmt sechs Prozent weg, die Öffnung wird durch die Brustskala geteilt. Der eigene Sinus auf aa ist weg. Brusttempo und lock.ts bleiben.",
     source: "Stundenplan",
   },
+  {
+    id: "frame-time",
+    time: "07:00",
+    step: null,
+    title: "Bildzeit",
+    body: "Die laufende Szene misst die Frame-Zeit. Ein Schalter zeigt Mittel, Bilder pro Sekunde und Spitze. Aus ist der Normalzustand. Kein neues Material. Die Pause bleibt 320 ms. Satzmelodie bleibt ausgesetzt.",
+    source: "Stundenplan",
+  },
 ];
 
 export const DONE_STEP = 9;
 export const NEXT_STEP = 10;
-export const NEXT_RUN_LABEL = "07:00";
+export const NEXT_RUN_LABEL = "08:00";
 
-/** Hourly pipeline. Step 6 mouth-against-breath is in. Melody stays deferred. */
-export const HOURLY_DONE = 6;
-export const HOURLY_NEXT = 7;
+/** Hourly pipeline. Step 7 is frame time. The 320 ms pause stayed. Melody stays deferred. */
+export const HOURLY_DONE = 7;
+export const HOURLY_NEXT = 8;
