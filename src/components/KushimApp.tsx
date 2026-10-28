@@ -197,7 +197,7 @@ export function KushimApp() {
     saveMemory(absorbed.memory);
     setHour(hourNow);
     const recent = next.slice(-windowTurns);
-    let reply = fallbackReply(clean, { name: nameNow, previous, memory: absorbed.memory });
+    let reply = fallbackReply(clean, { name: nameNow, memory: absorbed.memory });
     const repair = isRepairRequest(clean) && previous.trim().length > 0;
     if (!repair) {
       try {
@@ -218,6 +218,7 @@ export function KushimApp() {
         setNote("Ich bleibe bei einem kurzen Satz.");
       }
     }
+    // Sole reply-form call. Server and fallback hand back raw text.
     reply = {
       say: shapeReply(reply.say, { name: nameNow, userText: clean, previous }),
       gesture: reply.gesture,

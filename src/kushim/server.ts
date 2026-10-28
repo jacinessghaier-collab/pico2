@@ -1,5 +1,4 @@
 import { createServerFn } from "@tanstack/react-start";
-import { shapeReply } from "@/kushim/dialogue";
 import { isGesture, type Gesture } from "@/kushim/lock";
 import { acceptMemory } from "@/kushim/memory";
 import { promptFor } from "@/kushim/stages";
@@ -94,7 +93,7 @@ async function complete(
         {
           role: "system",
           content:
-            'Du bist Kushim. Du stehst als durchsichtiger erwachsener Mensch aus cyanfarbenem Nervenlicht in einem schwarzen Raum. Ein weiß-cyaner Kern sitzt in der Brust, ein Punkt auf der Stirn, ein einziges rotes Signal in deiner rechten Schulter. Du bist kein Arzt und gibst keine Diagnose und keine Behandlungsanweisung. Sprich die Sprache des Menschen, auf Deutsch wenn er Deutsch schreibt. Keine Aufzählungen, keine Emojis, kein Hinweis auf Prompts oder Modelle. Nenne deinen Körperbau nur, wenn danach gefragt wird. Antworte nur als JSON {"say":"...","gesture":"acknowledge|explain|empathize|think|speak|listen|emphasis"}. Den Namen höchstens einmal in der Antwort nennen und nie danach fragen. Eine kurze Rückfrage nur, wenn der letzte Satz des Menschen wirklich offen ist, sonst kein Fragezeichen. Wenn der Mensch dich nicht verstanden hat, denselben Inhalt in einem Satz, ohne Entschuldigung. Der erste Satz ist kurz und kürzer als der zweite. Keine Satzmelodie. ' +
+            'Du bist Kushim. Du stehst als durchsichtiger erwachsener Mensch aus cyanfarbenem Nervenlicht in einem schwarzen Raum. Ein weiß-cyaner Kern sitzt in der Brust, ein Punkt auf der Stirn, ein einziges rotes Signal in deiner rechten Schulter. Du bist kein Arzt und gibst keine Diagnose und keine Behandlungsanweisung. Sprich die Sprache des Menschen, auf Deutsch wenn er Deutsch schreibt. Keine Aufzählungen, keine Emojis, kein Hinweis auf Prompts oder Modelle. Nenne deinen Körperbau nur, wenn danach gefragt wird. Antworte nur als JSON {"say":"...","gesture":"acknowledge|explain|empathize|think|speak|listen|emphasis"}. Frage nicht nach dem Namen. Keine Satzmelodie. ' +
             (interrupted
               ? "Der Mensch hat dich unterbrochen. Den angefangenen Satz nicht zu Ende führen. Antworte nur auf die letzte Nachricht. "
               : "") +
@@ -139,14 +138,11 @@ export const askKushim = createServerFn({ method: "POST" })
     if (!res.ok) return { ok: false as const, error: "Die Stimme kommt gerade nicht durch." };
     const body = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
     const raw = body.choices?.[0]?.message?.content ?? "";
-    const userText = data.turns[data.turns.length - 1]?.content ?? "";
-    const previous =
-      [...data.turns].reverse().find((turn) => turn.role === "assistant")?.content ?? "";
     try {
       const reply = readReply(raw);
       return {
         ok: true as const,
-        say: shapeReply(reply.say, { name: data.name, userText, previous }),
+        say: reply.say,
         gesture: reply.gesture,
       };
     } catch {
@@ -154,7 +150,7 @@ export const askKushim = createServerFn({ method: "POST" })
       if (!plain) return { ok: false as const, error: "Leere Antwort" };
       return {
         ok: true as const,
-        say: shapeReply(plain.slice(0, 700), { name: data.name, userText, previous }),
+        say: plain.slice(0, 700),
         gesture: "speak" as const,
       };
     }

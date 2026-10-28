@@ -24,8 +24,7 @@ export const STAGES: Stage[] = [
   {
     hour: 0,
     label: "Atem und Strom",
-    prompt:
-      "Atme ruhig. Antworte in ein bis drei kurzen Sätzen. Der erste Satz ist kürzer als der zweite.",
+    prompt: "Atme ruhig. Antworte in ein bis drei kurzen Sätzen.",
     filament: 0.86,
     backchannel: false,
     inhaleMs: 80,
@@ -70,7 +69,7 @@ export const STAGES: Stage[] = [
   {
     hour: 3,
     label: "Sätze",
-    prompt: "Ein Gedanke pro Satz. Der zweite Satz darf eine Rückfrage sein, muss aber nicht.",
+    prompt: "Ein Gedanke pro Satz.",
     filament: 0.94,
     backchannel: true,
     inhaleMs: 280,
@@ -116,8 +115,8 @@ export const STAGES: Stage[] = [
   {
     hour: 6,
     label: "Reparatur",
-    prompt:
-      "Wenn der Mensch sagt, er habe dich nicht verstanden, wiederhole denselben Gedanken kürzer. Entschuldige dich nicht ausschweifend.",
+    // One sentence from the previous line, without an apology: shapeReply.
+    prompt: "",
     filament: 0.98,
     backchannel: true,
     inhaleMs: 300,

@@ -298,6 +298,13 @@ export function repairPhrase(previous: string): string {
   return capitalize(out);
 }
 
+/** Reply form. The only arguments `shapeReply` accepts. */
+export type ReplyShape = {
+  name: string;
+  userText: string;
+  previous?: string;
+};
+
 export function mentionNameOnce(say: string, name: string): string {
   const clean = name.trim();
   if (!clean) return say.trim();
@@ -317,10 +324,21 @@ export function mentionNameOnce(say: string, name: string): string {
     .trim();
 }
 
-export function shapeReply(
-  say: string,
-  opts: { name: string; userText: string; previous?: string },
-): string {
+/**
+ * The only reply-form path. Call it once on raw model or fallback text.
+ *
+ * It alone applies, in this order: pause-tag strip, repair from the previous
+ * line, dropping an uninvited question, stripping a leading apology on a
+ * repair, the name at most once, and the short first sentence.
+ * A second call with the same arguments is a no-op.
+ *
+ * Do not shape again in the surface, and do not restate these rules in the
+ * system text or the stage lines. `trimInterrupted` cuts a spoken line in
+ * history; it is not a second form. The one voice pause is `textForLeo` /
+ * `gapAfterSentence`, and it never lands in the chat text.
+ * Asking for the name is not stripped here.
+ */
+export function shapeReply(say: string, opts: ReplyShape): string {
   const previous = opts.previous?.trim() ?? "";
   const repaired = isRepairRequest(opts.userText) && previous.length > 0;
   let out = stripPauseTags(say);
