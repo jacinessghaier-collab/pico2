@@ -2,6 +2,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { Mic, Send, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ComponentType, FormEvent, RefObject } from "react";
+import { BildzeitReadout } from "@/kushim/BildzeitReadout";
 import { isRepairRequest, shapeReply, textForLeo, trimInterrupted } from "@/kushim/dialogue";
 import { fallbackReply } from "@/kushim/fallback";
 import type { Gesture } from "@/kushim/lock";
@@ -311,6 +312,7 @@ export function KushimApp() {
       </header>
 
       <div className="absolute inset-0">{Scene ? <Scene poseRef={poseRef} /> : null}</div>
+      <BildzeitReadout />
 
       <div
         ref={scroller}
