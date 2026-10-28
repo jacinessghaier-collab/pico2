@@ -344,31 +344,84 @@ function glowSprite(inner: string, outer: string, spikes: number) {
   return tex;
 }
 
-function softDisc() {
-  const canvas = document.createElement("canvas");
-  canvas.width = 64;
-  canvas.height = 64;
-  const ctx = canvas.getContext("2d");
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  if (!ctx) return tex;
-  const grd = ctx.createRadialGradient(32, 32, 0, 32, 32, 31);
-  grd.addColorStop(0, "rgba(255,255,255,0.85)");
-  grd.addColorStop(0.4, "rgba(255,255,255,0.22)");
-  grd.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = grd;
-  ctx.fillRect(0, 0, 64, 64);
-  tex.needsUpdate = true;
-  return tex;
+const auraVert = /* glsl */ `
+varying vec3 vW;
+void main() {
+  vec4 world = modelMatrix * vec4(position, 1.0);
+  vW = world.xyz;
+  gl_Position = projectionMatrix * viewMatrix * world;
+}
+`;
+
+const auraFrag = /* glsl */ `
+uniform vec3 uColor;
+uniform float uOpacity;
+uniform float uTight;
+varying vec3 vW;
+
+float sdCapsule(vec2 p, vec2 a, vec2 b, float r) {
+  vec2 pa = p - a;
+  vec2 ba = b - a;
+  float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-5), 0.0, 1.0);
+  return length(pa - ba * h) - r;
 }
 
-function silhouetteHalf(y: number) {
-  if (y > 1.66) return 0.11;
-  if (y > 1.5) return 0.14;
-  if (y > 1.4) return 0.08;
-  if (y > 0.8) return 0.28;
-  return y > 0.45 ? 0.17 : 0.13;
+float sdEllipse(vec2 p, vec2 c, vec2 r) {
+  vec2 q = (p - c) / r;
+  return (length(q) - 1.0) * min(r.x, r.y);
 }
+
+float smin(float a, float b, float k) {
+  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+  return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+float torsoR(float y) {
+  if (y < 0.98) return mix(0.062, 0.132, clamp((y - 0.92) / 0.06, 0.0, 1.0));
+  if (y < 1.10) return mix(0.132, 0.162, clamp((y - 0.98) / 0.12, 0.0, 1.0));
+  if (y < 1.22) return mix(0.162, 0.138, clamp((y - 1.10) / 0.12, 0.0, 1.0));
+  if (y < 1.34) return mix(0.138, 0.164, clamp((y - 1.22) / 0.12, 0.0, 1.0));
+  if (y < 1.44) return mix(0.164, 0.190, clamp((y - 1.34) / 0.10, 0.0, 1.0));
+  if (y < 1.52) return mix(0.190, 0.150, clamp((y - 1.44) / 0.08, 0.0, 1.0));
+  return mix(0.150, 0.055, clamp((y - 1.52) / 0.10, 0.0, 1.0));
+}
+
+float sdTorso(vec2 p) {
+  float y = clamp(p.y, 0.92, 1.60);
+  return length(p - vec2(0.0, y)) - torsoR(y);
+}
+
+float sdBody(vec2 p) {
+  float d = sdTorso(p);
+  d = smin(d, sdEllipse(p, vec2(0.0, 1.66), vec2(0.108, 0.126)), 0.04);
+  vec2 sL = vec2(0.20, 1.50);
+  vec2 eL = vec2(0.240, 1.102);
+  vec2 wL = vec2(0.271, 0.794);
+  vec2 hL = vec2(0.285, 0.68);
+  d = smin(d, sdCapsule(p, sL, eL, 0.046), 0.035);
+  d = smin(d, sdCapsule(p, eL, wL, 0.036), 0.03);
+  d = smin(d, sdCapsule(p, wL, hL, 0.028), 0.025);
+  d = smin(d, sdCapsule(p, vec2(-0.20, 1.50), vec2(-0.240, 1.102), 0.046), 0.035);
+  d = smin(d, sdCapsule(p, vec2(-0.240, 1.102), vec2(-0.271, 0.794), 0.036), 0.03);
+  d = smin(d, sdCapsule(p, vec2(-0.271, 0.794), vec2(-0.285, 0.68), 0.028), 0.025);
+  d = smin(d, sdCapsule(p, vec2(0.11, 0.96), vec2(0.11, 0.50), 0.068), 0.04);
+  d = smin(d, sdCapsule(p, vec2(0.11, 0.50), vec2(0.11, 0.10), 0.046), 0.03);
+  d = smin(d, sdCapsule(p, vec2(0.11, 0.10), vec2(0.11, 0.04), 0.032), 0.025);
+  d = smin(d, sdCapsule(p, vec2(-0.11, 0.96), vec2(-0.11, 0.50), 0.068), 0.04);
+  d = smin(d, sdCapsule(p, vec2(-0.11, 0.50), vec2(-0.11, 0.10), 0.046), 0.03);
+  d = smin(d, sdCapsule(p, vec2(-0.11, 0.10), vec2(-0.11, 0.04), 0.032), 0.025);
+  return d;
+}
+
+void main() {
+  float d = sdBody(vW.xy);
+  float outer = max(d, 0.0);
+  float gate = smoothstep(-0.002, 0.008, d);
+  float alpha = exp(-outer * outer * uTight) * gate * uOpacity;
+  if (alpha < 0.016) discard;
+  gl_FragColor = vec4(uColor, alpha);
+}
+`;
 
 const groundVert = /* glsl */ `
 varying vec2 vUv;
@@ -381,12 +434,16 @@ void main() {
 const groundFrag = /* glsl */ `
 uniform vec3 uColor;
 uniform float uOpacity;
+uniform float uRadius;
+uniform float uFoot;
+uniform float uTight;
 varying vec2 vUv;
 void main() {
-  vec2 p = vUv * 2.0 - 1.0;
-  float d = length(p);
-  float alpha = exp(-d * d * 2.4) * uOpacity * smoothstep(1.02, 0.5, d);
-  if (alpha < 0.008) discard;
+  vec2 world = (vUv * 2.0 - 1.0) * uRadius;
+  float dL = length(world - vec2(-uFoot, 0.0));
+  float dR = length(world - vec2(uFoot, 0.0));
+  float alpha = (exp(-dL * dL * uTight) + exp(-dR * dR * uTight)) * uOpacity;
+  if (alpha < 0.025) discard;
   gl_FragColor = vec4(uColor, alpha);
 }
 `;
@@ -396,38 +453,28 @@ function addShellLight(
   disposables: Array<THREE.BufferGeometry | THREE.Material | THREE.Texture>,
 ) {
   const spec = LOCK.aura;
-  const positions = new Float32Array(spec.count * 3);
-  const steps = spec.count / 2;
-  for (let i = 0; i < spec.count; i++) {
-    const side = i % 2 === 0 ? 1 : -1;
-    const t = Math.floor(i / 2) / Math.max(1, steps - 1);
-    const y = 0.04 + t * 1.74;
-    const edge = silhouetteHalf(y) * (1.035 + ((i * 5) % 3) * 0.008);
-    positions[i * 3] = side * edge;
-    positions[i * 3 + 1] = y;
-    positions[i * 3 + 2] = (((i * 13) % 7) - 3) * 0.006;
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  const tex = softDisc();
-  const mat = new THREE.PointsMaterial({
-    color: LOCK.strom,
-    map: tex,
-    size: spec.size,
+  const auraMat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
-    opacity: spec.opacity,
-    sizeAttenuation: true,
+    side: THREE.DoubleSide,
+    uniforms: {
+      uColor: { value: new THREE.Color(LOCK.strom) },
+      uOpacity: { value: spec.opacity },
+      uTight: { value: spec.tight },
+    },
+    vertexShader: auraVert,
+    fragmentShader: auraFrag,
   });
-  sealLookColor(mat.color);
-  markMaterial(mat, "aura");
-  const points = new THREE.Points(geo, mat);
-  points.frustumCulled = false;
-  points.renderOrder = 0;
-  points.userData.lockKey = "aura";
-  root.add(points);
-  disposables.push(tex, mat);
+  sealShaderChannels(auraMat, ["uColor", "uOpacity", "uTight"]);
+  markMaterial(auraMat, "aura");
+  const aura = new THREE.Mesh(new THREE.PlaneGeometry(spec.width, spec.height), auraMat);
+  aura.position.set(0, spec.y, spec.z);
+  aura.frustumCulled = false;
+  aura.renderOrder = 0;
+  aura.userData.lockKey = "aura";
+  root.add(aura);
+  disposables.push(auraMat);
 
   const pool = LOCK.ground;
   const groundMat = new THREE.ShaderMaterial({
@@ -438,11 +485,14 @@ function addShellLight(
     uniforms: {
       uColor: { value: new THREE.Color(LOCK.strom) },
       uOpacity: { value: pool.opacity },
+      uRadius: { value: pool.radius },
+      uFoot: { value: pool.foot },
+      uTight: { value: pool.tight },
     },
     vertexShader: groundVert,
     fragmentShader: groundFrag,
   });
-  sealShaderChannels(groundMat, ["uColor", "uOpacity"]);
+  sealShaderChannels(groundMat, ["uColor", "uOpacity", "uRadius", "uFoot", "uTight"]);
   markMaterial(groundMat, "ground");
   const ground = new THREE.Mesh(new THREE.CircleGeometry(pool.radius, 48), groundMat);
   ground.rotation.x = -Math.PI / 2;
@@ -980,7 +1030,7 @@ export function createKushim(): Rig {
   const P = LOCK.proportions;
   const root = new THREE.Group();
   const glass = glassMaterial(1, "glass");
-  const bright = glassMaterial(1.8, "glass-bright");
+  const bright = glassMaterial(0.42, "glass-bright");
   const nerve = nerveMaterial(LOCK.filament, 0.34);
   const signal = nerveMaterial(LOCK.signal, 0.2);
   const disposables: Array<THREE.BufferGeometry | THREE.Material | THREE.Texture> = [
@@ -1094,8 +1144,8 @@ export function createKushim(): Rig {
     const shoulder = new THREE.Group();
     shoulder.position.set(side * P.shoulderX, P.shoulderLocalY, 0);
     chest.add(shoulder);
-    const joint = solid(shoulder, new THREE.SphereGeometry(0.048, 14, 10), bright);
-    joint.scale.set(1.05, 1, 0.9);
+    const joint = solid(shoulder, new THREE.SphereGeometry(0.032, 12, 8), bright);
+    joint.scale.set(0.78, 0.62, 0.5);
     const upperMesh = solid(shoulder, capsule(0.046, P.upperArm), glass);
     upperMesh.position.y = -P.upperArm / 2;
     const upperN = emptyRibbon();
@@ -1105,7 +1155,8 @@ export function createKushim(): Rig {
     const elbow = new THREE.Group();
     elbow.position.y = -P.upperArm;
     shoulder.add(elbow);
-    solid(elbow, new THREE.SphereGeometry(0.032, 12, 8), bright);
+    const elbowJoint = solid(elbow, new THREE.SphereGeometry(0.022, 10, 8), bright);
+    elbowJoint.scale.set(0.72, 0.58, 0.48);
     const foreMesh = solid(elbow, capsule(0.036, P.foreArm), glass);
     foreMesh.position.y = -P.foreArm / 2;
     const foreN = emptyRibbon();
@@ -1115,7 +1166,8 @@ export function createKushim(): Rig {
     const wrist = new THREE.Group();
     wrist.position.y = -P.foreArm;
     elbow.add(wrist);
-    solid(wrist, new THREE.SphereGeometry(0.022, 10, 8), bright);
+    const wristJoint = solid(wrist, new THREE.SphereGeometry(0.016, 10, 8), bright);
+    wristJoint.scale.set(0.7, 0.55, 0.46);
     const palm = solid(wrist, new THREE.SphereGeometry(0.034, 12, 8), glass);
     palm.position.set(0, -0.03, 0.01);
     palm.scale.set(0.85, 1.15, 0.42);
@@ -1187,7 +1239,8 @@ export function createKushim(): Rig {
     hip.userData.lockSide = side;
     hip.position.set(side * 0.11, P.hipY, 0);
     root.add(hip);
-    solid(hip, new THREE.SphereGeometry(0.055, 14, 10), bright);
+    const hipJoint = solid(hip, new THREE.SphereGeometry(0.038, 12, 8), bright);
+    hipJoint.scale.set(0.78, 0.62, 0.52);
     const thighMesh = solid(hip, capsule(0.068, P.thigh), glass);
     thighMesh.position.y = -P.thigh / 2;
     const hipN = emptyRibbon();
@@ -1213,8 +1266,9 @@ export function createKushim(): Rig {
     knee.userData.lockKey = "knee";
     knee.position.y = -P.thigh;
     hip.add(knee);
-    const cap = solid(knee, new THREE.SphereGeometry(0.04, 12, 8), bright);
-    cap.position.z = 0.02;
+    const cap = solid(knee, new THREE.SphereGeometry(0.024, 10, 8), bright);
+    cap.scale.set(0.74, 0.58, 0.48);
+    cap.position.z = 0.008;
     const shinMesh = solid(knee, capsule(0.046, P.shin), glass);
     shinMesh.position.y = -P.shin / 2;
     const shinN = emptyRibbon();
@@ -1225,7 +1279,8 @@ export function createKushim(): Rig {
     ankle.userData.lockKey = "ankle";
     ankle.position.y = -P.shin;
     knee.add(ankle);
-    solid(ankle, new THREE.SphereGeometry(0.026, 10, 8), bright);
+    const ankleJoint = solid(ankle, new THREE.SphereGeometry(0.016, 10, 8), bright);
+    ankleJoint.scale.set(0.7, 0.55, 0.46);
     const foot = new THREE.Group();
     ankle.add(foot);
     const footMesh = solid(foot, capsule(0.028, 0.16), glass);

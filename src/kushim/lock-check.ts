@@ -42,15 +42,20 @@ export const LOCK_CANON = {
     sprite: 0.04,
   },
   aura: {
-    count: 112,
-    opacity: 0.14,
-    size: 0.2,
+    opacity: 0.5,
+    tight: 680,
+    width: 1.15,
+    height: 2.16,
+    y: 1,
+    z: 0.2,
   },
   ground: {
-    opacity: 0.2,
+    opacity: 0.5,
     y: 0.012,
     z: 0.05,
-    radius: 0.34,
+    radius: 0.22,
+    foot: 0.11,
+    tight: 520,
   },
   signalNerveCore: "#FF8A2A",
   signalCore: "#FFB15A",
@@ -71,7 +76,7 @@ export const LOCK_CANON = {
   torsoScale: [1.05, 1, 0.72],
   skullScale: [1, 1.16, 1.02],
   glassBoost: 1,
-  brightBoost: 1.8,
+  brightBoost: 0.42,
   coreBoost: 2.4,
   nerveSpeed: 0.34,
   signalSpeed: 0.2,
@@ -873,30 +878,41 @@ function auditShellExtras(rig: LockedRig) {
   if (!aura || aura.parent !== rig.root) {
     breach("Die Aura hängt nicht am Körper.", "The aura is not on the body.");
   }
-  const auraMat = (aura as THREE.Points).material;
+  if ((aura as THREE.Points).isPoints) {
+    breach("Die Aura ist noch ein Partikelring.", "The aura is still a particle ring.");
+  }
+  const auraMesh = aura as THREE.Mesh<THREE.PlaneGeometry>;
+  if (!auraMesh.isMesh) {
+    breach("Die Aura ist kein durchgehender Schleier.", "The aura is not a continuous veil.");
+  }
+  const auraMat = auraMesh.material;
   if (!auraMat || Array.isArray(auraMat) || roles.get(auraMat) !== "aura") {
     breach("Aura-Material fehlt.", "Aura material is missing.");
   }
-  const points = auraMat as THREE.PointsMaterial;
-  mustHex(points.color, LOCK_CANON.strom, "Aurafarbe", "Aura color");
-  mustClose(points.size, LOCK_CANON.aura.size, "Auragröße", "Aura size");
-  mustClose(points.opacity, LOCK_CANON.aura.opacity, "Auradeckkraft", "Aura opacity");
-  if (
-    !points.transparent ||
-    points.depthWrite ||
-    points.blending !== THREE.AdditiveBlending ||
-    points.premultipliedAlpha ||
-    !points.sizeAttenuation
-  ) {
-    breach("Die Aura hat ihren weichen Rand verloren.", "The aura lost its soft edge.");
+  const auraShader = auraMat as THREE.ShaderMaterial;
+  mustHex(colorSlot(auraShader, "uColor"), LOCK_CANON.strom, "Aurafarbe", "Aura color");
+  mustClose(
+    numberSlot(auraShader, "uOpacity", true),
+    LOCK_CANON.aura.opacity,
+    "Auradeckkraft",
+    "Aura opacity",
+  );
+  mustClose(
+    numberSlot(auraShader, "uTight", true),
+    LOCK_CANON.aura.tight,
+    "Auraenge",
+    "Aura tightness",
+  );
+  expectGlassLook(auraShader, "Aura", "Aura", THREE.DoubleSide);
+  mustClose(aura.position.x, 0, "Aura seitlich", "Aura lateral");
+  mustClose(aura.position.y, LOCK_CANON.aura.y, "Aurahöhe", "Aura height");
+  mustClose(aura.position.z, LOCK_CANON.aura.z, "Auratiefe", "Aura depth");
+  const auraSize = auraMesh.geometry?.parameters;
+  if (!auraSize || !Number.isFinite(auraSize.width) || !Number.isFinite(auraSize.height)) {
+    breach("Auramasse fehlt.", "Aura size is missing.");
   }
-  const attr = (aura as THREE.Points).geometry?.getAttribute("position");
-  if (!attr || attr.count !== LOCK_CANON.aura.count) {
-    breach(
-      "Die Aura hat nicht mehr die gesperrte Punktzahl.",
-      "The aura no longer has its locked point count.",
-    );
-  }
+  mustClose(auraSize.width, LOCK_CANON.aura.width, "Aurabreite", "Aura width");
+  mustClose(auraSize.height, LOCK_CANON.aura.height, "Auralänge", "Aura length");
 
   const ground = objectByKey(rig.root, "ground");
   if (!ground || ground.parent !== rig.root) {
@@ -916,6 +932,24 @@ function auditShellExtras(rig: LockedRig) {
     LOCK_CANON.ground.opacity,
     "Bodenlicht-Deckkraft",
     "Ground-light opacity",
+  );
+  mustClose(
+    numberSlot(shader, "uRadius", true),
+    LOCK_CANON.ground.radius,
+    "Bodenlicht-Radiusuniform",
+    "Ground-light radius uniform",
+  );
+  mustClose(
+    numberSlot(shader, "uFoot", true),
+    LOCK_CANON.ground.foot,
+    "Bodenlicht-Fußabstand",
+    "Ground-light foot spacing",
+  );
+  mustClose(
+    numberSlot(shader, "uTight", true),
+    LOCK_CANON.ground.tight,
+    "Bodenlicht-Enge",
+    "Ground-light tightness",
   );
   expectGlassLook(shader, "Bodenlicht", "Ground light", THREE.DoubleSide);
   const radius = (ground as THREE.Mesh<THREE.CircleGeometry>).geometry?.parameters?.radius;

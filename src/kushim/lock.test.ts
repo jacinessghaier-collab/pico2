@@ -13,9 +13,11 @@ describe("visual lock", () => {
     assert.equal(LOCK.glass.fill, 0.004);
     assert.equal(LOCK.glass.rim, 0.95);
     assert.equal(LOCK.glass.sprite, 0.04);
-    assert.equal(LOCK.aura.count, 112);
-    assert.equal(LOCK.aura.opacity, 0.14);
-    assert.equal(LOCK.ground.opacity, 0.2);
+    assert.equal(LOCK.aura.opacity, 0.5);
+    assert.equal(LOCK.aura.tight, 680);
+    assert.equal(LOCK.ground.opacity, 0.5);
+    assert.equal(LOCK.ground.radius, 0.22);
+    assert.equal(LOCK.ground.foot, 0.11);
     assert.equal(LOCK.ground.y, 0.012);
     assert.deepEqual(LOCK.proportions, {
       hipY: 0.96,
