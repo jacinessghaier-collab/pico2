@@ -1060,46 +1060,34 @@ function arcBetween(
   );
 }
 
-const TORSO_PROFILE: Array<[number, number]> = [
-  [0.055, -0.3],
-  [0.12, -0.24],
-  [0.15, -0.12],
-  [0.125, 0],
-  [0.15, 0.12],
-  [0.175, 0.22],
-  [0.15, 0.3],
-  [0.075, 0.38],
-  [0.048, 0.46],
-];
-
-function torsoRadius(y: number) {
-  const pts = TORSO_PROFILE;
-  if (y <= pts[0][1]) return pts[0][0];
-  for (let i = 1; i < pts.length; i++) {
-    const [r0, y0] = pts[i - 1];
-    const [r1, y1] = pts[i];
-    if (y <= y1) {
-      const t = (y - y0) / (y1 - y0);
-      return r0 + (r1 - r0) * t;
-    }
-  }
-  return pts[pts.length - 1][0];
-}
-
 function fillTorso(ribbon: Ribbon) {
-  // Forked plexus in chest space (current lathe).
-  // Thin spine, uneven short forks, local weaves. Inset. No sternum ball.
-  const hair = 0.00018;
-  const twigW = 0.00014;
+  // Forked plexus inside the current lathe. Radii are read, not retuned.
+  // Chest is the fiber mass: short forks and local weaves. Inset. No sternum ball.
+  const hair = 0.000175;
+  const twigW = 0.00012;
   let seed = 11;
   const h = () => unitHash(seed++);
-  const limitX = (y: number) => torsoRadius(y) * 1.05 * 0.74;
-  const limitZ = (y: number) => torsoRadius(y) * 0.72 * 0.56;
-  const clampX = (x: number, y: number) => Math.max(-limitX(y), Math.min(limitX(y), x));
-  const clampZ = (z: number, y: number) => Math.max(-limitZ(y), Math.min(limitZ(y), z));
+  const yLo = -0.32;
+  const yHi = 0.4;
+  const inset = 0.88;
+  const box = (y: number) => {
+    const r = shellRadius(Math.max(-0.34, Math.min(0.5, y)));
+    return {
+      x: Math.max(0.012, r * SHELL_SX * inset),
+      z: Math.max(0.008, r * 0.72 * inset),
+    };
+  };
+  const massAt = (y: number) => {
+    const chest = Math.exp(-((y - 0.19) * (y - 0.19)) / (0.12 * 0.12));
+    const column = 0.48 + 0.52 * Math.exp(-((y - 0.06) * (y - 0.06)) / (0.26 * 0.26));
+    let m = Math.max(chest, column * 0.78);
+    if (y > 0.34) m *= 0.42;
+    return Math.min(1, m);
+  };
 
   const nodes: Array<[number, number, number]> = [];
   const budget = { n: 0 };
+  const cap = 3400;
 
   const strand = (
     x0: number,
@@ -1113,15 +1101,18 @@ function fillTorso(ribbon: Ribbon) {
     gain: number,
     warm: number,
   ) => {
-    const yA = Math.max(-0.3, Math.min(0.44, y0));
-    const yB = Math.max(-0.3, Math.min(0.44, y1));
-    const ax = clampX(x0, yA);
-    const az = clampZ(z0, yA);
-    const bx = clampX(x1, yB);
-    const bz = clampZ(z1, yB);
-    if (Math.hypot(bx - ax, yB - yA) < 0.011) return null;
-    const slide = Math.hypot(bx - x1, bz - z1);
-    if (slide > Math.hypot(x1 - x0, y1 - y0) * 0.45) return null;
+    const yA = Math.max(yLo, Math.min(yHi, y0));
+    const yB = Math.max(yLo, Math.min(yHi, y1));
+    const fit = (x: number, z: number, y: number) => {
+      const b = box(y);
+      const e = (x * x) / (b.x * b.x) + (z * z) / (b.z * b.z);
+      if (e <= 1) return [x, z] as const;
+      const s = 0.98 / Math.sqrt(e);
+      return [x * s, z * s] as const;
+    };
+    const [ax, az] = fit(x0, z0, yA);
+    const [bx, bz] = fit(x1, z1, yB);
+    if (Math.hypot(bx - ax, yB - yA) < 0.008) return null;
     arcBetween(
       ribbon,
       ax,
@@ -1130,7 +1121,7 @@ function fillTorso(ribbon: Ribbon) {
       bx,
       yB,
       bz,
-      (h() - 0.5) * 0.01,
+      (h() - 0.5) * 0.012,
       rank,
       width,
       gain,
@@ -1144,20 +1135,20 @@ function fillTorso(ribbon: Ribbon) {
 
   let sx = 0;
   let sy = 0.38;
-  let sz = 0.012;
+  let sz = 0.01;
   const spine: Array<[number, number, number]> = [[sx, sy, sz]];
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 22; i++) {
     const end = strand(
       sx,
       sy,
       sz,
-      sx + (h() - 0.5) * 0.012,
-      sy - 0.05,
-      sz + (h() - 0.5) * 0.008,
-      0.04 + (i % 3) * 0.01,
+      sx + (h() - 0.5) * 0.014,
+      sy - 0.032,
+      sz + (h() - 0.5) * 0.01,
+      0.04 + (i % 4) * 0.01,
       hair,
-      0.42,
-      0.48,
+      0.4,
+      0.58,
     );
     if (!end) break;
     [sx, sy, sz] = end;
@@ -1174,14 +1165,16 @@ function fillTorso(ribbon: Ribbon) {
     width: number,
     gain: number,
     dense: boolean,
+    room: { n: number },
   ) => {
-    if (depth > 4 || len < 0.013 || budget.n > 340) return;
-    if (y > 0.44 || y < -0.3) return;
-    const sway = (h() - 0.5) * (depth === 0 ? 0.4 : 0.75);
+    const roomCap = dense ? 16 : 9;
+    if (depth > (dense ? 4 : 3) || len < 0.008 || budget.n >= cap || room.n >= roomCap) return;
+    if (y > yHi || y < yLo) return;
+    const sway = (h() - 0.5) * (depth === 0 ? 0.5 : 0.95);
     const a = ang + sway;
     const ny = y + Math.cos(a) * len;
     const nx = x + Math.sin(a) * len;
-    const nz = z + (h() - 0.5) * 0.016;
+    const nz = z + (h() - 0.5) * len * 0.65;
     const end = strand(
       x,
       y,
@@ -1189,171 +1182,242 @@ function fillTorso(ribbon: Ribbon) {
       nx,
       ny,
       nz,
-      0.08 + depth * 0.045,
-      depth >= 3 ? twigW : width,
+      0.06 + depth * 0.035,
+      depth >= 2 ? twigW : width,
       gain,
-      depth < 2 ? 0.4 : 0.26,
+      depth < 2 ? 0.4 : 0.22,
     );
     if (!end) return;
-    const spread = 0.55 + h() * 0.5;
-    const keep = 0.58 + h() * 0.16;
-    grow(end[0], end[1], end[2], a - spread, len * keep, depth + 1, width * 0.9, gain * 0.9, dense);
-    const fork = dense ? depth < 2 || h() > 0.32 : h() > 0.62;
+    room.n += 1;
+    const spread = 0.65 + h() * 0.55;
+    const keep = 0.7 + h() * 0.1;
+    grow(end[0], end[1], end[2], a - spread, len * keep, depth + 1, width * 0.9, gain * 0.88, dense, room);
+    const fork = dense ? h() > 0.22 : h() > 0.58;
     if (fork) {
       grow(
         end[0],
         end[1],
         end[2],
-        a + spread * (0.65 + h() * 0.35),
-        len * keep * 0.82,
+        a + spread * (0.55 + h() * 0.4),
+        len * keep * 0.78,
         depth + 1,
-        width * 0.86,
-        gain * 0.86,
+        width * 0.8,
+        gain * 0.84,
         dense,
+        room,
       );
     }
   };
 
-  for (const [x, y, z] of spine) {
-    const dense = y > -0.04 && y < 0.3;
-    const len = (dense ? 0.04 : 0.048) + h() * 0.018;
-    const tilt = (h() - 0.5) * 0.85;
-    const base = dense ? 1.02 : 1.65;
-    if (h() > 0.12) grow(x, y, z, -base + tilt, len, 0, hair, dense ? 0.4 : 0.28, dense);
-    if (h() > (dense ? 0.22 : 0.58)) {
-      grow(x, y, z, base + tilt * 0.5, len * (0.72 + h() * 0.25), 0, hair, dense ? 0.38 : 0.26, dense);
+  const sow = (x: number, y: number, z: number) => {
+    const dense = massAt(y) > 0.62;
+    const room = { n: 0 };
+    const len = (dense ? 0.03 : 0.034) + h() * 0.014;
+    const lateral = h() < 0.28;
+    const aim = lateral
+      ? (h() < 0.5 ? -1 : 1) * (0.55 + h() * 1.15)
+      : Math.PI + (h() - 0.5) * 1.7;
+    grow(x, y, z, aim, len, 0, dense ? hair : twigW, dense ? 0.4 : 0.26, dense, room);
+  };
+
+  const bands: number[] = [];
+  for (let band = 0; band < 18; band++) {
+    bands.push(yLo + ((band + 0.5) / 18) * (yHi - yLo));
+  }
+  bands.sort((a, b) => massAt(b) - massAt(a));
+  for (const y of bands) {
+    const m = massAt(y);
+    const b = box(y);
+    const seeds = 4 + Math.round(m * 16);
+    for (let k = 0; k < seeds; k++) {
+      const ang = h() * Math.PI * 2;
+      const rad = 0.16 + Math.sqrt(h()) * (0.55 + m * 0.25);
+      sow(Math.cos(ang) * b.x * rad, y, Math.sin(ang) * b.z * rad * (0.4 + h() * 0.55));
     }
   }
 
-  const extras: Array<[number, number, number, number]> = [
-    [-0.028, 0.18, 0.012, -0.55],
-    [0.034, 0.14, 0.01, 0.85],
-    [-0.05, 0.06, 0.006, -1.45],
-    [0.046, 0.09, 0.008, 1.35],
-    [-0.018, 0.24, 0.014, -0.25],
-    [0.02, 0.02, 0.016, 1.7],
-    [-0.038, -0.08, 0.004, -2.05],
-    [0.032, -0.1, 0.002, 2.15],
-  ];
-  for (const [x, y, z, ang] of extras) {
-    const dense = y > -0.02 && y < 0.28;
+  for (const [x, y, z] of spine) {
+    if (budget.n >= cap || h() > 0.4) continue;
+    const dense = massAt(y) > 0.62;
+    const room = { n: 0 };
+    const side = h() < 0.5 ? -1 : 1;
     grow(
       x,
       y,
       z,
-      ang + (h() - 0.5) * 0.45,
-      (dense ? 0.038 : 0.032) + h() * 0.014,
+      side * (0.85 + h() * 0.7),
+      (dense ? 0.028 : 0.034) + h() * 0.01,
       0,
-      twigW,
-      dense ? 0.36 : 0.24,
+      hair,
+      dense ? 0.26 : 0.16,
       dense,
+      room,
     );
   }
 
-  let links = 0;
-  for (let i = 0; i < nodes.length && links < 110; i++) {
-    const j = (i * 7 + 3) % nodes.length;
-    if (j === i) continue;
-    const [x, y, z] = nodes[i];
-    const [x2, y2, z2] = nodes[j];
-    const d = Math.hypot(x2 - x, y2 - y, (z2 - z) * 2);
-    if (d < 0.014 || d > 0.046) continue;
-    const chest = y > -0.04 && y < 0.28 && y2 > -0.04 && y2 < 0.28;
-    arcBetween(
-      ribbon,
-      x,
-      y,
-      z,
-      x2,
-      y2,
-      z2,
-      (h() - 0.5) * 0.006,
-      0.16 + (links % 5) * 0.02,
-      twigW,
-      chest ? 0.26 : 0.16,
-      chest ? 0.34 : 0.22,
-    );
-    links += 1;
+  const cell = 0.034;
+  const bins = new Map<string, Array<[number, number, number]>>();
+  for (const p of nodes) {
+    const k = `${Math.round(p[0] / cell)}:${Math.round(p[1] / cell)}:${Math.round(p[2] / cell)}`;
+    const list = bins.get(k);
+    if (list) list.push(p);
+    else bins.set(k, [p]);
   }
+  let links = 0;
+  for (const pool of bins.values()) {
+    if (links >= 720 || pool.length < 2) continue;
+    let local = 0;
+    for (let a = 0; a < pool.length && links < 720 && local < 5; a++) {
+      const b = pool[(a * 3 + 1) % pool.length];
+      if (b === pool[a]) continue;
+      const [x, y, z] = pool[a];
+      const [x2, y2, z2] = b;
+      const chest = massAt((y + y2) * 0.5) > 0.55;
+      if (!chest && h() > 0.5) continue;
+      const d = Math.hypot(x2 - x, y2 - y, (z2 - z) * 1.4);
+      if (d < 0.008 || d > (chest ? 0.05 : 0.038)) continue;
+      arcBetween(
+        ribbon,
+        x,
+        y,
+        z,
+        x2,
+        y2,
+        z2,
+        (h() - 0.5) * 0.008,
+        0.08 + (links % 5) * 0.015,
+        twigW * 0.8,
+        chest ? 0.24 : 0.14,
+        chest ? 0.32 : 0.18,
+      );
+      links += 1;
+      local += 1;
+    }
+  }
+}
+
+function upperAxis(side: 1 | -1) {
+  const prox = BLEND.shoulder;
+  const length = LOCK.proportions.upperArm;
+  const pin = LOCK.proportions.shoulderX;
+  return (u: number) => {
+    const t = (prox + u * length) / (prox + length);
+    return side * (upperCenter(Math.min(1, Math.max(0, t))).center - pin);
+  };
 }
 
 function fillLimb(
   ribbon: Ribbon,
   length: number,
-  count: number,
-  radius: number,
+  radii: readonly number[],
   rank: number,
   width: number,
   gain: number,
   seed: number,
   side: number,
-  distal = radius * 0.62,
+  axisX?: (u: number) => number,
 ) {
-  // One wandering trunk and short twigs on the current lathe. Not full-length lanes.
-  let n = Math.round(seed * 19 + length * 80 + count);
+  // Thin trunks and short twigs inside the current tube. Not full-length lanes.
+  let n = Math.round(seed * 19 + length * 80 + radii.length);
   const h = () => unitHash(n++);
-  const girth = (u: number) => radius + (distal - radius) * Math.min(1, Math.max(0, u));
-  const phase = h() * Math.PI * 2;
-  const bias = (h() - 0.5) * radius * 0.08 + side * radius * 0.03;
-  const clampAt = (v: number, u: number) => {
-    const reach = girth(u) * 0.78;
-    return Math.max(-reach, Math.min(reach, v));
-  };
-  const trunk = (t: number) => {
-    const u = Math.min(0.98, Math.max(0, t));
-    const wander = girth(u) * 0.2;
+  const flat = 0.8;
+  const axis = axisX ?? (() => 0);
+  const reachX = (u: number) => radiusAt(radii, u) * 0.76;
+  const reachZ = (u: number) => radiusAt(radii, u) * flat * 0.76;
+  const clamp = (v: number, reach: number) => Math.max(-reach, Math.min(reach, v));
+  const mean = radii.reduce((sum, r) => sum + r, 0) / Math.max(1, radii.length);
+  const laneCount = mean > 0.055 ? 3 : 2;
+  const lanes = Array.from({ length: laneCount }, (_, i) => {
+    const spread = laneCount === 2 ? (i === 0 ? -0.46 : 0.42) : (i - 1) * 0.4;
+    return {
+      x: spread + (h() - 0.5) * 0.1,
+      z: (h() - 0.5) * 0.32,
+      phase: h() * Math.PI * 2,
+    };
+  });
+  const point = (t: number, lane: (typeof lanes)[number]) => {
+    const u = Math.min(0.96, Math.max(0.06, t));
+    const rx = reachX(u);
+    const rz = reachZ(u);
+    const wander = Math.min(rx, rz) * 0.24;
     return new THREE.Vector3(
-      clampAt(bias + Math.sin(u * Math.PI * 1.1 + phase) * wander, u),
+      axis(u) +
+        clamp(side * rx * 0.04 + lane.x * rx + Math.sin(u * Math.PI * 1.25 + lane.phase) * wander, rx),
       -u * length,
-      clampAt(Math.sin(u * Math.PI * 0.7 + phase * 1.3) * wander * 0.8, u),
+      clamp(lane.z * rz + Math.sin(u * Math.PI * 0.8 + lane.phase * 1.35) * wander * 0.85, rz),
     );
   };
 
-  pushCurve(ribbon, 16, (u) => trunk(u), Math.min(0.8, rank), width, gain * 0.72, 0.3, 0.1);
+  for (const lane of lanes) {
+    pushCurve(ribbon, 14, (u) => point(u, lane), Math.min(0.8, rank), width, gain * 0.62, 0.3, 0.22);
+  }
 
-  const twigs = Math.round(9 + count * 0.2);
+  const twigs = Math.round(36 + length * 96 + mean * 240);
+  for (let s = 0; s < 5; s++) {
+    const lane = lanes[s % lanes.length];
+    const t0 = 0.06 + h() * 0.45;
+    const span = 0.22 + h() * 0.28;
+    const drift = (h() - 0.5) * 0.55;
+    const zDrift = (h() - 0.5) * 0.35;
+    pushCurve(
+      ribbon,
+      8,
+      (u) => {
+        const t = Math.min(0.96, t0 + u * span);
+        const p = point(t, lane);
+        const rx = reachX(t);
+        const rz = reachZ(t);
+        p.x = axis(t) + clamp(p.x - axis(t) + drift * rx * u, rx);
+        p.z = clamp(p.z + zDrift * rz * u, rz);
+        return p;
+      },
+      Math.min(0.8, rank + 0.05),
+      Math.max(width * 0.7, 0.00009),
+      gain * 0.46,
+      0.22,
+      0.35,
+    );
+  }
   for (let f = 0; f < twigs; f++) {
-    const t0 = Math.min(0.9, 0.05 + ((f + 0.4) / twigs) * 0.84);
-    const origin = trunk(t0);
-    const reach = girth(t0) * 0.72;
-    const dir = (f % 2 === 0 ? 1 : -1) * (0.55 + h() * 0.4);
-    const along = 0.07 + h() * 0.08;
-    const sideReach = reach * (0.48 + h() * 0.4);
-    const tipX = Math.max(-reach, Math.min(reach, origin.x + dir * sideReach));
-    const tipY = origin.y - along * length;
-    const tipZ = Math.max(-reach, Math.min(reach, origin.z + (h() - 0.5) * reach * 0.65));
+    const lane = lanes[f % lanes.length];
+    const t0 = 0.07 + h() * 0.86;
+    const origin = point(t0, lane);
+    const rx = reachX(t0);
+    const rz = reachZ(t0);
+    const dir = h() < 0.72 ? (h() < 0.5 ? -1 : 1) * (0.35 + h() * 1.15) : h() * Math.PI * 2;
+    const span = 0.62 + h() * 0.34;
+    const tx = axis(t0) + clamp(Math.cos(dir) * rx * span, rx);
+    const tz = clamp(Math.sin(dir) * rz * span * 0.65, rz);
+    const tipY = Math.max(-length * 0.98, origin.y - (0.07 + h() * 0.14) * length);
     pushCurve(
       ribbon,
       3,
       (u) =>
         new THREE.Vector3(
-          origin.x + (tipX - origin.x) * u,
+          origin.x + (tx - origin.x) * u,
           origin.y + (tipY - origin.y) * u,
-          origin.z + (tipZ - origin.z) * u,
+          origin.z + (tz - origin.z) * u,
         ),
-      Math.min(0.8, rank + 0.05 + (f % 4) * 0.02),
-      width * 0.62,
-      gain * 0.42,
-      0.22,
-      0.65,
+      Math.min(0.8, rank + 0.03 + (f % 4) * 0.012),
+      Math.max(width * 0.72, 0.00009),
+      gain * 0.5,
+      0.2,
+      0.5,
     );
-    if (f % 3 === 1) {
-      const zKick = (h() - 0.5) * reach * 0.25;
-      const forkReach = reach * 0.35;
+    if (h() < 0.42) {
+      const fdir = dir + (h() < 0.5 ? 0.7 : -0.7);
+      const fx = axis(t0) + clamp(Math.cos(fdir) * rx * span * 0.62, rx);
+      const fz = clamp(Math.sin(fdir) * rz * span * 0.4, rz);
+      const fy = Math.max(-length * 0.98, tipY - length * 0.03);
       pushCurve(
         ribbon,
         2,
-        (u) =>
-          new THREE.Vector3(
-            Math.max(-reach, Math.min(reach, tipX + dir * forkReach * u)),
-            tipY - u * length * 0.028,
-            Math.max(-reach, Math.min(reach, tipZ + zKick * u)),
-          ),
-        Math.min(0.82, rank + 0.14),
-        width * 0.5,
-        gain * 0.28,
-        0.18,
-        0.7,
+        (u) => new THREE.Vector3(tx + (fx - tx) * u, tipY + (fy - tipY) * u, tz + (fz - tz) * u),
+        Math.min(0.82, rank + 0.1),
+        Math.max(width * 0.55, 0.000075),
+        gain * 0.34,
+        0.14,
+        0.65,
       );
     }
   }
@@ -1701,7 +1765,7 @@ export function createKushim(): Rig {
       glass,
     );
     const upperN = emptyRibbon();
-    fillLimb(upperN, P.upperArm, 16, 0.058, 0.06, 0.00013, 0.6, side * 1.3, side, 0.026);
+    fillLimb(upperN, P.upperArm, UPPER_RADII, 0.05, 0.00011, 0.5, side * 1.3, side, upperAxis(side));
     commitRibbon(shoulder, upperN, nerve);
 
     const elbow = new THREE.Group();
@@ -1716,7 +1780,7 @@ export function createKushim(): Rig {
       glass,
     );
     const foreN = emptyRibbon();
-    fillLimb(foreN, P.foreArm, 12, 0.026, 0.08, 0.00012, 0.55, side * 2.1, side, 0.017);
+    fillLimb(foreN, P.foreArm, FORE_RADII, 0.07, 0.00009, 0.42, side * 2.1, side);
     commitRibbon(elbow, foreN, nerve);
 
     const wrist = new THREE.Group();
@@ -1818,7 +1882,17 @@ export function createKushim(): Rig {
       glass,
     );
     const hipN = emptyRibbon();
-    fillLimb(hipN, P.thigh, 18, 0.072, 0.05, 0.00014, 0.6, side * 2.4, side, 0.032);
+    fillLimb(
+      hipN,
+      P.thigh,
+      THIGH_RADII,
+      0.05,
+      0.00011,
+      0.48,
+      side * 2.4,
+      side,
+      (u) => -side * LIMB.thigh.inset * (1 - u) * (1 - u),
+    );
     commitRibbon(hip, hipN, nerve);
 
     const knee = new THREE.Group();
@@ -1834,7 +1908,7 @@ export function createKushim(): Rig {
       glass,
     );
     const shinN = emptyRibbon();
-    fillLimb(shinN, P.shin, 14, 0.032, 0.08, 0.00012, 0.55, 3.1 + side, side, 0.02);
+    fillLimb(shinN, P.shin, SHIN_RADII, 0.07, 0.000085, 0.4, 3.1 + side, side);
     commitRibbon(knee, shinN, nerve);
 
     const ankle = new THREE.Group();
