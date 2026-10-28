@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   FIRST_PAUSE_MS,
   closeUninvitedQuestion,
@@ -152,6 +155,22 @@ describe("shorter first sentence", () => {
   });
 });
 
+const srcRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+function listSources(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...listSources(full));
+    else if (/\.tsx?$/.test(entry.name) && !entry.name.endsWith(".test.ts")) out.push(full);
+  }
+  return out;
+}
+
+function calls(source: string, name: string): number {
+  return source.match(new RegExp(`\\b${name}\\s*\\(`, "g"))?.length ?? 0;
+}
+
 describe("shapeReply", () => {
   it("repairs from the previous line, then allows a question only when open", () => {
     assert.equal(
@@ -178,5 +197,68 @@ describe("shapeReply", () => {
       }),
       "Ich höre. Was meinst du?",
     );
+  });
+
+  it("keeps the same words when the same reply is shaped again", () => {
+    const samples: Array<[string, { name: string; userText: string; previous?: string }]> = [
+      [
+        "[pause] Tut mir leid, Jacin Jacin. Was meinst du?",
+        { name: "Jacin", userText: "wie bitte", previous: "Der Kern sitzt in der Brust." },
+      ],
+      [
+        "Ich höre. Was meinst du genau, Jacin Jacin?",
+        { name: "Jacin", userText: "Ich bin müde.", previous: "" },
+      ],
+      [
+        "Hallo. Ich bin da. Was beschäftigt dich gerade?",
+        { name: "", userText: "Hallo", previous: "" },
+      ],
+      [
+        "Ich würde dir das lieber mit meiner verbundenen Stimme beantworten. Bis dahin sag mir, was du davon selbst schon glaubst.",
+        { name: "Jacin", userText: "Wer bist du?", previous: "" },
+      ],
+    ];
+    for (const [say, opts] of samples) {
+      const once = shapeReply(say, opts);
+      assert.equal(shapeReply(once, opts), once);
+      assert.equal(once.includes("[pause]"), false);
+    }
+  });
+
+  it("is the only reply-form call in the app", () => {
+    const helpers = [
+      "mentionNameOnce",
+      "closeUninvitedQuestion",
+      "shortenFirstSentence",
+      "repairPhrase",
+      "stripLeadingApology",
+    ];
+    const surface = join(srcRoot, "components/KushimApp.tsx");
+    const definition = join(srcRoot, "kushim/dialogue.ts");
+    for (const file of listSources(srcRoot)) {
+      const source = readFileSync(file, "utf8");
+      const shaped = calls(source, "shapeReply");
+      if (file === surface) assert.equal(shaped, 1, file);
+      else if (file === definition) assert.equal(shaped, 1, file);
+      else assert.equal(shaped, 0, file);
+      if (file === definition) continue;
+      for (const helper of helpers) assert.equal(calls(source, helper), 0, `${file} ${helper}`);
+    }
+
+    const server = readFileSync(join(srcRoot, "kushim/server.ts"), "utf8");
+    const stages = readFileSync(join(srcRoot, "kushim/stages.ts"), "utf8");
+    const duplicated = [
+      "höchstens einmal",
+      "kürzer als der zweite",
+      "ohne Entschuldigung",
+      "kein Fragezeichen",
+      "nicht verstanden",
+      "Rückfrage",
+    ];
+    for (const phrase of duplicated) {
+      assert.equal(server.includes(phrase), false, phrase);
+      assert.equal(stages.includes(phrase), false, phrase);
+    }
+    assert.equal(server.includes("Frage nicht nach dem Namen."), true);
   });
 });

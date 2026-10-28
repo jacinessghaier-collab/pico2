@@ -1,10 +1,10 @@
-import { isRepairRequest, shapeReply } from "@/kushim/dialogue";
+import { isRepairRequest } from "@/kushim/dialogue";
 import type { Gesture } from "@/kushim/lock";
 import { recallReply, type DurableMemory } from "@/kushim/memory";
 
 export function fallbackReply(
   user: string,
-  ctx?: { name?: string; previous?: string; memory?: DurableMemory },
+  ctx?: { name?: string; memory?: DurableMemory },
 ): { say: string; gesture: Gesture } {
   const q = user.toLowerCase();
   const recalled = ctx?.memory ? recallReply(user, ctx.memory, ctx.name ?? "") : null;
@@ -31,8 +31,5 @@ export function fallbackReply(
     gesture = "think";
   }
   if (isRepairRequest(user)) gesture = "acknowledge";
-  return {
-    say: shapeReply(say, { name: ctx?.name ?? "", userText: user, previous: ctx?.previous }),
-    gesture,
-  };
+  return { say, gesture };
 }
