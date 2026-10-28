@@ -145,12 +145,20 @@ export const CHANGES: Change[] = [
     body: "Liegt der Sprechbus still, ist die Lippe zu und der Kiefer auf der Ruhe. Die Satzpause hält den Bus still, auch länger als die erste Pause, und die Pose darf dabei noch sprechen. Gemessen, ohne die Form nachzuziehen. FIRST_PAUSE_MS, Bildzeit und lock.ts bleiben.",
     source: "Stundenplan",
   },
+  {
+    id: "lock-reread",
+    time: "08:00",
+    step: null,
+    title: "Lock erneut gelesen",
+    body: "Dieselbe Prüfung wirft weiter LockBreach. Zusätzlich fallen ein ausgetauschter Shader oder eine andere Geometrie, ein umgehängtes oder ausgeblendetes Teil, eine seitliche oder kopfüber stehende Kamera und ein Raum, der den Void zudeckt. Die Figur und lock.ts sind unverändert.",
+    source: "Stundenplan",
+  },
 ];
 
 export const DONE_STEP = 9;
 export const NEXT_STEP = 10;
 export const NEXT_RUN_LABEL = "09:00";
 
-/** Hourly pipeline. Step 8 idle mouth is in. Frame time and the 320 ms pause stayed. Melody stays deferred. */
+/** Hourly pipeline. Step 8 re-read the appearance lock. Melody stays deferred. */
 export const HOURLY_DONE = 8;
 export const HOURLY_NEXT = 9;

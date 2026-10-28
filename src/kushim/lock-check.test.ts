@@ -34,6 +34,23 @@ function pose(patch: Partial<Pose> = {}): Pose {
   };
 }
 
+function voidScene() {
+  return {
+    background: null as unknown,
+    fog: null as unknown,
+    overrideMaterial: null as unknown,
+    environment: null as unknown,
+  };
+}
+
+function loud(error: unknown) {
+  assert.ok(error instanceof LockBreach);
+  assert.match(error.message, /Lock-Bruch: .+/);
+  assert.match(error.message, /Lock breach: .+/);
+  assert.ok(error.de.length > 0 && error.en.length > 0);
+  return true;
+}
+
 function frame(aspect: number) {
   const cam = new THREE.PerspectiveCamera(26, aspect, 0.08, 40);
   const fov = 26;
@@ -83,6 +100,20 @@ describe("appearance lock table", () => {
     }, TypeError);
     assert.equal(LOCK.strom, "#3AD7FF");
     assert.equal(LOCK.proportions.headRadius, 0.105);
+  });
+
+  it("keeps the comparison table frozen", () => {
+    assert.ok(Object.isFrozen(LOCK_CANON));
+    assert.ok(Object.isFrozen(LOCK_CANON.proportions));
+    assert.ok(Object.isFrozen(LOCK_CANON.torsoScale));
+    assert.throws(() => {
+      (LOCK_CANON as { strom: string }).strom = "#000000";
+    }, TypeError);
+    assert.throws(() => {
+      (LOCK_CANON.torsoScale as unknown as number[])[0] = 2;
+    }, TypeError);
+    assert.equal(LOCK_CANON.strom, "#3AD7FF");
+    assert.equal(LOCK_CANON.torsoScale[0], 1.05);
   });
 });
 
@@ -264,6 +295,72 @@ describe("figure lock", () => {
       rig.dispose();
     }
   });
+
+  it("fails loud when the sealed figure is swapped, hidden, or joined by something else", () => {
+    const rig = createKushim();
+    const scene = new THREE.Scene();
+    try {
+      scene.add(rig.root);
+      assert.doesNotThrow(() => assertRigLock(rig, "live", scene));
+
+      const parent = rig.lips.parent;
+      assert.ok(parent);
+      rig.root.add(rig.lips);
+      assert.throws(() => assertRigLock(rig, "live"), loud);
+      parent.add(rig.lips);
+
+      rig.head.visible = false;
+      assert.throws(() => assertRigLock(rig, "live"), loud);
+      rig.head.visible = true;
+
+      rig.chest.layers.set(2);
+      assert.throws(() => assertRigLock(rig, "live"), loud);
+      rig.chest.layers.set(0);
+
+      const skull = rig.head.children.find((child) => child.userData.lockKey === "skull") as THREE.Mesh;
+      assert.ok(skull);
+      const sealedGeo = skull.geometry;
+      skull.geometry = new THREE.SphereGeometry(LOCK.proportions.headRadius, 8, 6);
+      assert.throws(() => assertRigLock(rig, "live"), loud);
+      skull.geometry.dispose();
+      skull.geometry = sealedGeo;
+
+      const fragment = rig.glass.fragmentShader;
+      rig.glass.fragmentShader = `${fragment}\n`;
+      assert.throws(() => assertRigLock(rig, "live"), loud);
+      rig.glass.fragmentShader = fragment;
+      rig.glass.uniforms.uExtra = { value: 0 };
+      assert.throws(() => assertRigLock(rig, "live"), loud);
+      delete rig.glass.uniforms.uExtra;
+
+      rig.glass.premultipliedAlpha = true;
+      assert.throws(() => assertRigLock(rig, "live"), loud);
+      rig.glass.premultipliedAlpha = false;
+
+      const floor = new THREE.Mesh(
+        new THREE.PlaneGeometry(4, 4),
+        new THREE.MeshBasicMaterial({ color: "#333333" }),
+      );
+      scene.add(floor);
+      assert.throws(() => assertRigLock(rig, "live", scene), loud);
+      scene.remove(floor);
+      floor.geometry.dispose();
+      floor.material.dispose();
+
+      scene.position.x = 0.2;
+      assert.throws(() => assertRigLock(rig, "live"), loud);
+      scene.position.x = 0;
+
+      const holder = new THREE.Group();
+      holder.add(rig.root);
+      assert.throws(() => assertRigLock(rig, "live"), loud);
+      holder.remove(rig.root);
+
+      assert.doesNotThrow(() => assertRigLock(rig, "live", scene));
+    } finally {
+      rig.dispose();
+    }
+  });
 });
 
 describe("camera and void", () => {
@@ -280,34 +377,76 @@ describe("camera and void", () => {
       () => assertFrontalCamera({ fov: 50, position: { x: 0 }, rotation: { z: 0 } }),
       LockBreach,
     );
+    assert.throws(
+      () => assertFrontalCamera({ fov: Number.NaN, position: { x: 0 }, rotation: { y: 0, z: 0 } }),
+      loud,
+    );
+    const yawed = frame(1);
+    yawed.rotation.y = 0.2;
+    assert.throws(() => assertFrontalCamera(yawed), loud);
+    yawed.rotation.y = 0;
+    yawed.up.set(0, -1, 0);
+    assert.throws(() => assertFrontalCamera(yawed), loud);
   });
 
   it("requires the opaque void and no tone mapping", () => {
     const color = new THREE.Color("#02060A");
-    assert.doesNotThrow(() =>
-      assertClearLock({
-        toneMapping: THREE.NoToneMapping,
-        getClearColor: (target) => target.copy(color),
-        getClearAlpha: () => 1,
-      }),
-    );
+    const gl = {
+      toneMapping: THREE.NoToneMapping,
+      outputColorSpace: THREE.SRGBColorSpace,
+      getClearColor: (target: THREE.Color) => target.copy(color),
+      getClearAlpha: () => 1,
+    };
+    const scene = voidScene();
+    assert.doesNotThrow(() => assertClearLock(gl, scene));
     assert.throws(
       () =>
-        assertClearLock({
-          toneMapping: THREE.NoToneMapping,
-          getClearColor: (target) => target.set("#111111"),
-          getClearAlpha: () => 1,
-        }),
+        assertClearLock(
+          {
+            toneMapping: THREE.NoToneMapping,
+            getClearColor: (target) => target.set("#111111"),
+            getClearAlpha: () => 1,
+          },
+          scene,
+        ),
       LockBreach,
     );
     assert.throws(
       () =>
-        assertClearLock({
-          toneMapping: THREE.ACESFilmicToneMapping,
-          getClearColor: (target) => target.copy(color),
-          getClearAlpha: () => 1,
-        }),
+        assertClearLock(
+          {
+            toneMapping: THREE.ACESFilmicToneMapping,
+            getClearColor: (target) => target.copy(color),
+            getClearAlpha: () => 1,
+          },
+          scene,
+        ),
       LockBreach,
     );
+    assert.throws(
+      () =>
+        assertClearLock(
+          { ...gl, getClearAlpha: () => 0 },
+          scene,
+        ),
+      loud,
+    );
+    scene.background = new THREE.Color("#111111");
+    assert.throws(() => assertClearLock(gl, scene), loud);
+    scene.background = null;
+    scene.fog = new THREE.Fog(LOCK.void, 1, 4);
+    assert.throws(() => assertClearLock(gl, scene), loud);
+    scene.fog = null;
+    scene.overrideMaterial = new THREE.MeshBasicMaterial();
+    assert.throws(() => assertClearLock(gl, scene), loud);
+    scene.overrideMaterial = null;
+    scene.environment = new THREE.Texture();
+    assert.throws(() => assertClearLock(gl, scene), loud);
+    scene.environment = null;
+    assert.throws(
+      () => assertClearLock({ ...gl, outputColorSpace: THREE.LinearSRGBColorSpace }, scene),
+      loud,
+    );
+    assert.doesNotThrow(() => assertClearLock(gl, scene));
   });
 });
