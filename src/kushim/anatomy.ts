@@ -36,12 +36,15 @@ export type Rig = {
 };
 
 const glassVert = /* glsl */ `
+attribute float aFade;
 varying vec3 vN;
 varying vec3 vW;
+varying float vFade;
 void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
   vW = world.xyz;
   vN = normalize(mat3(modelMatrix) * normal);
+  vFade = aFade;
   gl_Position = projectionMatrix * viewMatrix * world;
 }
 `;
@@ -59,6 +62,7 @@ uniform float uStar;
 uniform float uStarTight;
 varying vec3 vN;
 varying vec3 vW;
+varying float vFade;
 void main() {
   vec3 viewDir = normalize(cameraPosition - vW);
   float ndv = abs(dot(normalize(vN), viewDir));
@@ -68,7 +72,7 @@ void main() {
     * smoothstep(1.54, 1.26, vW.y);
   vec3 chest = vW - vec3(0.0, 1.32, 0.04);
   float star = exp(-dot(chest, chest) * uStarTight);
-  float alpha = fres * uRim * uBoost + uFill * uBoost + spine * uSpine + star * uStar;
+  float alpha = (fres * uRim * uBoost + uFill * uBoost + spine * uSpine + star * uStar) * vFade;
   if (alpha < 0.012) discard;
   vec3 col = mix(uColor, uCore, clamp(fres * 0.38 + spine * 0.18, 0.0, 1.0));
   gl_FragColor = vec4(col, alpha);
@@ -82,13 +86,14 @@ uniform float uBoost;
 uniform float uShow;
 varying vec3 vN;
 varying vec3 vW;
+varying float vFade;
 void main() {
   vec3 viewDir = normalize(cameraPosition - vW);
   float fres = pow(1.0 - abs(dot(normalize(vN), viewDir)), 2.35);
   float spine = exp(-abs(vW.x) * 14.0) * smoothstep(0.35, 1.15, vW.y) * smoothstep(1.75, 1.35, vW.y);
   vec3 chest = vW - vec3(0.0, 1.34, 0.06);
   float star = exp(-dot(chest, chest) * 18.0);
-  float alpha = (fres * 0.95 * uBoost + 0.07 * uBoost + spine * 0.55 + star * 0.7) * uShow;
+  float alpha = (fres * 0.95 * uBoost + 0.07 * uBoost + spine * 0.55 + star * 0.7) * uShow * vFade;
   if (alpha < 0.015) discard;
   gl_FragColor = vec4(mix(uColor, uCore, fres), alpha);
 }
@@ -315,6 +320,12 @@ function nerveMaterial(color: string, speed: number) {
 }
 
 function solid(parent: THREE.Object3D, geo: THREE.BufferGeometry, material: THREE.Material) {
+  if (!geo.getAttribute("aFade")) {
+    const count = geo.getAttribute("position").count;
+    const fade = new Float32Array(count);
+    fade.fill(1);
+    geo.setAttribute("aFade", new THREE.Float32BufferAttribute(fade, 1));
+  }
   geo.computeVertexNormals();
   const mesh = new THREE.Mesh(geo, material);
   mesh.renderOrder = 1;
@@ -327,20 +338,54 @@ function capsule(radius: number, length: number) {
   return new THREE.CapsuleGeometry(radius, cyl, 4, 8);
 }
 
-/** Open tube with a proximal flare. Cuts sit inside the parent, so joints are not orbs. */
-function organicTube(radii: readonly number[], length: number) {
-  const seg = 18;
-  const overlap = 0.07;
+/** Hermite 0 at edge0, 1 at edge1. Parent distal and child proximal sum to 1. */
+function hermite(edge0: number, edge1: number, x: number) {
+  const span = edge1 - edge0;
+  if (Math.abs(span) < 1e-6) return x >= edge1 ? 1 : 0;
+  const t = Math.min(1, Math.max(0, (x - edge0) / span));
+  return t * t * (3 - 2 * t);
+}
+
+function taperRadii(r0: number, r1: number, n: number) {
+  const radii: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const t = n === 1 ? 0 : i / (n - 1);
+    const s = t * t * (3 - 2 * t);
+    radii.push(r0 + (r1 - r0) * s);
+  }
+  return radii;
+}
+
+/**
+ * Open tube. Proximal rings tuck into the parent and fade in.
+ * Distal rings fade out over `dist`, which matches the child tube's `prox`.
+ * No end-cap and no sphere — the seam is a crossfade, not an orb.
+ */
+function organicTube(
+  radii: readonly number[],
+  length: number,
+  side: 1 | -1,
+  inset: number,
+  prox: number,
+  dist: number,
+) {
+  const seg = 22;
   const rings = radii.length;
   const pos: number[] = [];
+  const fade: number[] = [];
   const idx: number[] = [];
   for (let i = 0; i < rings; i++) {
     const t = rings === 1 ? 0 : i / (rings - 1);
-    const y = overlap * (1 - t) - length * t;
+    const y = prox * (1 - t) - length * t;
     const r = radii[i] ?? radii[radii.length - 1] ?? 0.02;
+    const bias = -side * inset * (1 - t) * (1 - t);
+    let cover = 1;
+    if (prox > 0) cover = Math.min(cover, hermite(prox, 0, y));
+    if (dist > 0) cover = Math.min(cover, hermite(-length, -length + dist, y));
     for (let j = 0; j <= seg; j++) {
       const a = (j / seg) * Math.PI * 2;
-      pos.push(Math.cos(a) * r, y, Math.sin(a) * r * 0.8);
+      pos.push(Math.cos(a) * r + bias, y, Math.sin(a) * r * 0.8);
+      fade.push(cover);
     }
   }
   const row = seg + 1;
@@ -353,6 +398,7 @@ function organicTube(radii: readonly number[], length: number) {
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("aFade", new THREE.Float32BufferAttribute(fade, 1));
   geo.setIndex(idx);
   return geo;
 }
@@ -389,6 +435,34 @@ function glowSprite(inner: string, outer: string, spikes: number) {
   return tex;
 }
 
+const SHELL_SX = 1.05;
+const SKULL_SY = 1.16;
+const HIP_X = 0.11;
+/** Same lathe the glass torso uses. The aura zero-contour reads this profile. */
+const SHELL_LATHE: Array<[number, number]> = [
+  [0.06, -0.34],
+  [0.108, -0.26],
+  [0.14, -0.14],
+  [0.11, -0.02],
+  [0.098, 0.06],
+  [0.112, 0.11],
+  [0.142, 0.16],
+  [0.172, 0.21],
+  [0.196, 0.27],
+  [0.172, 0.33],
+  [0.118, 0.38],
+  [0.09, 0.42],
+  [0.05, 0.5],
+];
+/** Crossfade length shared by a parent distal end and its child proximal end. */
+const BLEND = { elbow: 0.09, knee: 0.09, shoulder: 0.016, hip: 0.02 };
+const LIMB = {
+  upper: { r0: 0.056, r1: 0.032, inset: 0.01 },
+  fore: { r0: 0.032, r1: 0.02, inset: 0 },
+  thigh: { r0: 0.072, r1: 0.038, inset: 0.008 },
+  shin: { r0: 0.038, r1: 0.024, inset: 0 },
+} as const;
+
 const auraVert = /* glsl */ `
 uniform float uOriginY;
 varying vec2 vBody;
@@ -399,16 +473,45 @@ void main() {
 }
 `;
 
-const auraFrag = /* glsl */ `
+function g4(n: number) {
+  return n.toFixed(4);
+}
+
+/** Veil whose peak sits on the glass silhouette and falls outward. */
+function buildAuraFrag() {
+  const P = LOCK.proportions;
+  const chestY = P.chestY;
+  const y0 = chestY + SHELL_LATHE[0][1];
+  const yN = chestY + SHELL_LATHE[SHELL_LATHE.length - 1][1];
+  const rows = SHELL_LATHE.map(
+    ([r, y], i) => `  vec2 s${i} = vec2(${g4(r * SHELL_SX)}, ${g4(chestY + y)});`,
+  ).join("\n");
+  const chain = SHELL_LATHE.map((_, i) => {
+    if (i === 0) return "  if (y <= s0.y) return s0.x;";
+    return `  if (y <= s${i}.y) return mix(s${i - 1}.x, s${i}.x, (y - s${i - 1}.y) / (s${i}.y - s${i - 1}.y));`;
+  }).join("\n");
+  const last = SHELL_LATHE.length - 1;
+  const shoulderY = P.chestY + P.shoulderLocalY;
+  const elbowY = shoulderY - P.upperArm;
+  const wristY = elbowY - P.foreArm;
+  const kneeY = P.hipY - P.thigh;
+  const ankleY = kneeY - P.shin;
+  const headY = P.chestY + P.headLocalY;
+  const L = LIMB;
+  const limb = (x: number, yTop: number, yBot: number, r0: number, r1: number, inset: number) =>
+    `sdLimb(p, ${g4(x)}, ${g4(yTop)}, ${g4(yBot)}, ${g4(r0)}, ${g4(r1)}, ${g4(inset)})`;
+  return /* glsl */ `
 uniform vec3 uColor;
 uniform float uOpacity;
 uniform float uTight;
 varying vec2 vBody;
 
-float sdCapsule(vec2 p, vec2 a, vec2 b, float r) {
+float sdTaper(vec2 p, vec2 a, vec2 b, float r0, float r1) {
   vec2 pa = p - a;
   vec2 ba = b - a;
   float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-5), 0.0, 1.0);
+  float s = h * h * (3.0 - 2.0 * h);
+  float r = mix(r0, r1, s);
   return length(pa - ba * h) - r;
 }
 
@@ -423,46 +526,52 @@ float smin(float a, float b, float k) {
 }
 
 float torsoR(float y) {
-  if (y < 1.02) return mix(0.06, 0.13, clamp((y - 0.94) / 0.08, 0.0, 1.0));
-  if (y < 1.16) return mix(0.13, 0.16, clamp((y - 1.02) / 0.14, 0.0, 1.0));
-  if (y < 1.34) return mix(0.16, 0.103, clamp((y - 1.16) / 0.18, 0.0, 1.0));
-  if (y < 1.52) return mix(0.103, 0.194, clamp((y - 1.34) / 0.18, 0.0, 1.0));
-  return mix(0.194, 0.052, clamp((y - 1.52) / 0.26, 0.0, 1.0));
+${rows}
+${chain}
+  return s${last}.x;
 }
 
 float sdTorso(vec2 p) {
-  float y = clamp(p.y, 0.94, 1.78);
-  return length(p - vec2(0.0, y)) - torsoR(y);
+  float y = clamp(p.y, ${g4(y0)}, ${g4(yN)});
+  float d = abs(p.x) - torsoR(y);
+  float cap = 0.0;
+  if (p.y > ${g4(yN)}) cap = p.y - ${g4(yN)};
+  if (p.y < ${g4(y0)}) cap = ${g4(y0)} - p.y;
+  return max(d, cap);
+}
+
+float sdLimb(vec2 p, float x, float yTop, float yBot, float r0, float r1, float inset) {
+  float lean = sign(x) * (abs(x) - inset);
+  return sdTaper(p, vec2(lean, yTop), vec2(x, yBot), r0, r1);
 }
 
 float sdBody(vec2 p) {
   float d = sdTorso(p);
-  d = smin(d, sdEllipse(p, vec2(0.0, 1.76), vec2(0.1, 0.118)), 0.04);
-  vec2 sL = vec2(0.21, 1.56);
-  vec2 eL = vec2(0.21, 1.14);
-  vec2 wL = vec2(0.21, 0.81);
-  vec2 hL = vec2(0.21, 0.68);
-  d = smin(d, sdCapsule(p, sL, eL, 0.04), 0.04);
-  d = smin(d, sdCapsule(p, eL, wL, 0.024), 0.028);
-  d = smin(d, sdCapsule(p, wL, hL, 0.014), 0.02);
-  d = smin(d, sdCapsule(p, vec2(-0.21, 1.56), vec2(-0.21, 1.14), 0.04), 0.04);
-  d = smin(d, sdCapsule(p, vec2(-0.21, 1.14), vec2(-0.21, 0.81), 0.024), 0.028);
-  d = smin(d, sdCapsule(p, vec2(-0.21, 0.81), vec2(-0.21, 0.68), 0.014), 0.02);
-  d = smin(d, sdCapsule(p, vec2(0.11, 1.0), vec2(0.11, 0.50), 0.062), 0.045);
-  d = smin(d, sdCapsule(p, vec2(0.11, 0.50), vec2(0.11, 0.04), 0.03), 0.028);
-  d = smin(d, sdCapsule(p, vec2(-0.11, 1.0), vec2(-0.11, 0.50), 0.062), 0.045);
-  d = smin(d, sdCapsule(p, vec2(-0.11, 0.50), vec2(-0.11, 0.04), 0.03), 0.028);
+  d = smin(d, sdEllipse(p, vec2(0.0, ${g4(headY)}), vec2(${g4(P.headRadius)}, ${g4(P.headRadius * SKULL_SY)})), 0.036);
+  d = smin(d, ${limb(P.shoulderX, shoulderY, elbowY, L.upper.r0, L.upper.r1, L.upper.inset)}, 0.036);
+  d = smin(d, ${limb(-P.shoulderX, shoulderY, elbowY, L.upper.r0, L.upper.r1, L.upper.inset)}, 0.036);
+  d = smin(d, ${limb(P.shoulderX, elbowY, wristY, L.fore.r0, L.fore.r1, 0)}, 0.024);
+  d = smin(d, ${limb(-P.shoulderX, elbowY, wristY, L.fore.r0, L.fore.r1, 0)}, 0.024);
+  d = smin(d, ${limb(P.shoulderX, wristY, wristY - 0.06, 0.02, 0.016, 0)}, 0.018);
+  d = smin(d, ${limb(-P.shoulderX, wristY, wristY - 0.06, 0.02, 0.016, 0)}, 0.018);
+  d = smin(d, ${limb(HIP_X, P.hipY, kneeY, L.thigh.r0, L.thigh.r1, L.thigh.inset)}, 0.034);
+  d = smin(d, ${limb(-HIP_X, P.hipY, kneeY, L.thigh.r0, L.thigh.r1, L.thigh.inset)}, 0.034);
+  d = smin(d, ${limb(HIP_X, kneeY, ankleY, L.shin.r0, L.shin.r1, 0)}, 0.028);
+  d = smin(d, ${limb(-HIP_X, kneeY, ankleY, L.shin.r0, L.shin.r1, 0)}, 0.028);
+  d = smin(d, ${limb(HIP_X, ankleY + 0.016, ankleY - 0.02, 0.038, 0.03, 0)}, 0.03);
+  d = smin(d, ${limb(-HIP_X, ankleY + 0.016, ankleY - 0.02, 0.038, 0.03, 0)}, 0.03);
   return d;
 }
 
 void main() {
   float d = sdBody(vBody);
-  float band = exp(-d * d * uTight);
-  float alpha = band * uOpacity;
-  if (alpha < 0.02) discard;
+  float side = d >= 0.0 ? 1.0 : 2.6;
+  float alpha = exp(-d * d * uTight * side) * uOpacity;
+  if (alpha < 0.01) discard;
   gl_FragColor = vec4(uColor, alpha);
 }
 `;
+}
 
 const groundVert = /* glsl */ `
 varying vec2 vUv;
@@ -481,12 +590,12 @@ uniform float uTight;
 varying vec2 vUv;
 void main() {
   vec2 world = (vUv * 2.0 - 1.0) * uRadius;
-  vec2 qL = world - vec2(-uFoot, 0.02);
-  vec2 qR = world - vec2(uFoot, 0.02);
-  qL = vec2(qL.x * 3.4, qL.y * 0.42);
-  qR = vec2(qR.x * 3.4, qR.y * 0.42);
-  float alpha = (exp(-dot(qL, qL) * uTight) + exp(-dot(qR, qR) * uTight)) * uOpacity;
-  if (alpha < 0.02) discard;
+  vec2 qL = world - vec2(-uFoot, -0.03);
+  vec2 qR = world - vec2(uFoot, -0.03);
+  vec2 eL = vec2(qL.x / 0.07, qL.y / 0.05);
+  vec2 eR = vec2(qR.x / 0.07, qR.y / 0.05);
+  float alpha = (exp(-dot(eL, eL) * uTight) + exp(-dot(eR, eR) * uTight)) * uOpacity;
+  if (alpha < 0.01) discard;
   gl_FragColor = vec4(uColor, alpha);
 }
 `;
@@ -508,7 +617,7 @@ function addShellLight(
       uOriginY: { value: spec.y },
     },
     vertexShader: auraVert,
-    fragmentShader: auraFrag,
+    fragmentShader: buildAuraFrag(),
   });
   sealShaderChannels(auraMat, ["uColor", "uOpacity", "uTight", "uOriginY"]);
   markMaterial(auraMat, "aura");
@@ -1141,24 +1250,6 @@ function fillHotspot(ribbon: Ribbon) {
   }
 }
 
-function addFingers(wrist: THREE.Group, side: 1 | -1, material: THREE.Material) {
-  const fingers: THREE.Group[] = [];
-  for (const spec of FINGER_SPECS) {
-    const finger = new THREE.Group();
-    finger.position.set(spec.x * side, -0.02, spec.z);
-    finger.rotation.z = spec.rot * side;
-    const seg = solid(
-      finger,
-      new THREE.CylinderGeometry(0.0055, 0.004, spec.len, 7, 1, true),
-      material,
-    );
-    seg.position.y = -spec.len * 0.5;
-    wrist.add(finger);
-    fingers.push(finger);
-  }
-  return fingers;
-}
-
 export function createKushim(): Rig {
   const P = LOCK.proportions;
   const root = new THREE.Group();
@@ -1175,20 +1266,15 @@ export function createKushim(): Rig {
   chest.position.y = P.chestY;
   root.add(chest);
 
-  const torsoPts = [
-    new THREE.Vector2(0.062, -0.34),
-    new THREE.Vector2(0.12, -0.26),
-    new THREE.Vector2(0.152, -0.14),
-    new THREE.Vector2(0.118, -0.02),
-    new THREE.Vector2(0.098, 0.06),
-    new THREE.Vector2(0.14, 0.14),
-    new THREE.Vector2(0.185, 0.24),
-    new THREE.Vector2(0.16, 0.34),
-    new THREE.Vector2(0.09, 0.42),
-    new THREE.Vector2(0.05, 0.5),
-  ];
-  const torso = solid(chest, new THREE.LatheGeometry(torsoPts, 28), glass);
-  torso.scale.set(1.05, 1, 0.72);
+  const torso = solid(
+    chest,
+    new THREE.LatheGeometry(
+      SHELL_LATHE.map(([r, y]) => new THREE.Vector2(r, y)),
+      28,
+    ),
+    glass,
+  );
+  torso.scale.set(SHELL_SX, 1, 0.72);
   torso.userData.lockKey = "torso";
 
   const head = new THREE.Group();
@@ -1276,7 +1362,18 @@ export function createKushim(): Rig {
     const shoulder = new THREE.Group();
     shoulder.position.set(side * P.shoulderX, P.shoulderLocalY, 0);
     chest.add(shoulder);
-    const upperMesh = solid(shoulder, organicTube([0.074, 0.066, 0.05, 0.038, 0.032], P.upperArm), glass);
+    const upperMesh = solid(
+      shoulder,
+      organicTube(
+        taperRadii(LIMB.upper.r0, LIMB.upper.r1, 8),
+        P.upperArm,
+        side,
+        LIMB.upper.inset,
+        BLEND.shoulder,
+        BLEND.elbow,
+      ),
+      glass,
+    );
     const upperN = emptyRibbon();
     fillLimb(upperN, P.upperArm, 16, 0.058, 0.06, 0.00013, 0.6, side * 1.3, side, 0.026);
     commitRibbon(shoulder, upperN, nerve);
@@ -1284,7 +1381,11 @@ export function createKushim(): Rig {
     const elbow = new THREE.Group();
     elbow.position.y = -P.upperArm;
     shoulder.add(elbow);
-    const foreMesh = solid(elbow, organicTube([0.032, 0.029, 0.025, 0.021], P.foreArm), glass);
+    const foreMesh = solid(
+      elbow,
+      organicTube(taperRadii(LIMB.fore.r0, LIMB.fore.r1, 7), P.foreArm, side, 0, BLEND.elbow, 0),
+      glass,
+    );
     const foreN = emptyRibbon();
     fillLimb(foreN, P.foreArm, 12, 0.026, 0.08, 0.00012, 0.55, side * 2.1, side, 0.017);
     commitRibbon(elbow, foreN, nerve);
@@ -1307,7 +1408,7 @@ export function createKushim(): Rig {
     );
     palm.scale.set(1.15, 1, 0.42);
     palm.position.set(0, -0.01, 0.01);
-    const fingers = addFingers(wrist, side, glass);
+    const fingers: THREE.Group[] = [];
     const handN = emptyRibbon();
     fillHand(handN, side);
     commitRibbon(wrist, handN, nerve);
@@ -1373,9 +1474,20 @@ export function createKushim(): Rig {
     const hip = new THREE.Group();
     hip.userData.lockKey = "hip";
     hip.userData.lockSide = side;
-    hip.position.set(side * 0.11, P.hipY, 0);
+    hip.position.set(side * HIP_X, P.hipY, 0);
     root.add(hip);
-    const thighMesh = solid(hip, organicTube([0.092, 0.08, 0.064, 0.05, 0.04], P.thigh), glass);
+    const thighMesh = solid(
+      hip,
+      organicTube(
+        taperRadii(LIMB.thigh.r0, LIMB.thigh.r1, 8),
+        P.thigh,
+        side,
+        LIMB.thigh.inset,
+        BLEND.hip,
+        BLEND.knee,
+      ),
+      glass,
+    );
     const hipN = emptyRibbon();
     fillLimb(hipN, P.thigh, 18, 0.072, 0.05, 0.00014, 0.6, side * 2.4, side, 0.032);
     commitRibbon(hip, hipN, nerve);
@@ -1384,7 +1496,11 @@ export function createKushim(): Rig {
     knee.userData.lockKey = "knee";
     knee.position.y = -P.thigh;
     hip.add(knee);
-    const shinMesh = solid(knee, organicTube([0.04, 0.036, 0.031, 0.026], P.shin), glass);
+    const shinMesh = solid(
+      knee,
+      organicTube(taperRadii(LIMB.shin.r0, LIMB.shin.r1, 7), P.shin, side, 0, BLEND.knee, 0),
+      glass,
+    );
     const shinN = emptyRibbon();
     fillLimb(shinN, P.shin, 14, 0.032, 0.08, 0.00012, 0.55, 3.1 + side, side, 0.02);
     commitRibbon(knee, shinN, nerve);
@@ -1410,13 +1526,8 @@ export function createKushim(): Rig {
       glass,
     );
     footMesh.rotation.x = Math.PI / 2;
-    footMesh.scale.set(1.2, 1, 0.5);
-    footMesh.position.set(0, -0.016, 0.02);
-    for (let t = 0; t < 5; t++) {
-      const toe = solid(foot, new THREE.CylinderGeometry(0.006, 0.0035, 0.026, 6, 1, true), glass);
-      toe.rotation.x = Math.PI / 2;
-      toe.position.set((t - 2) * 0.011 * side, -0.01, 0.125);
-    }
+    footMesh.scale.set(1.25, 1, 0.36);
+    footMesh.position.set(0, -0.02, 0.024);
     const footN = emptyRibbon();
     fillFoot(footN, side);
     commitRibbon(foot, footN, nerve);
