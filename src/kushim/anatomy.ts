@@ -721,93 +721,53 @@ function fillLimb(
   seed: number,
   side: number,
 ) {
+  // Long hairlines along the bone. A fork peels off and keeps going;
+  // it does not double back into a knot. Everything stays inside the glass.
   let n = Math.round(seed * 19 + length * 80 + count);
   const h = () => unitHash(n++);
-  const trunks = count >= 16 ? 3 : 2;
-  for (let t = 0; t < trunks; t++) {
-    let x = (t - (trunks - 1) / 2) * radius * 0.42;
-    let z = (h() - 0.5) * radius * 0.3;
-    let y = 0;
-    const steps = 4;
-    for (let s = 0; s < steps; s++) {
-      const y2 = -((s + 1) / steps) * length;
-      const x2 = Math.max(-radius * 0.9, Math.min(radius * 0.9, x + (h() - 0.5) * radius * 0.75));
-      const z2 = z + (h() - 0.5) * radius * 0.28;
-      arcBetween(
-        ribbon,
-        x,
-        y,
-        z,
-        x2,
-        y2,
-        z2,
-        (h() - 0.5) * radius * 0.45,
-        Math.min(0.8, rank + s * 0.03),
-        width,
-        gain * (1 - s * 0.05),
-        0.4,
-      );
-      if (s > 0) {
-        const dir = h() > 0.5 ? 1 : -1;
-        const outward = Math.sign(side) || 1;
-        const tx = Math.max(
-          -radius * 0.95,
-          Math.min(radius * 0.95, x2 + dir * outward * radius * (0.28 + h() * 0.38)),
-        );
-        const ty = y2 - length * (0.06 + h() * 0.08);
-        arcBetween(
-          ribbon,
-          x2,
-          y2,
-          z2,
-          tx,
-          ty,
-          z2 + (h() - 0.5) * radius * 0.15,
-          (h() - 0.5) * radius * 0.2,
-          Math.min(0.8, rank + 0.08 + (t % 3) * 0.03),
-          width * 0.85,
-          gain * 0.72,
-          0.36,
-        );
-        if (h() > 0.42) {
-          arcBetween(
-            ribbon,
-            tx,
-            ty,
-            z2,
-            tx * 0.35,
-            ty - length * 0.05,
-            z2 * 0.5,
-            (h() - 0.5) * radius * 0.12,
-            Math.min(0.82, rank + 0.14),
-            width * 0.75,
-            gain * 0.55,
-            0.32,
-          );
-        }
-      }
-      x = x2;
-      y = y2;
-      z = z2;
-    }
-  }
-  for (let c = 0; c < 2; c++) {
-    const y = -length * (0.28 + c * 0.38);
-    arcBetween(
+  const inset = radius * 0.48;
+  const strands = count >= 16 ? 4 : 3;
+  for (let s = 0; s < strands; s++) {
+    const lane = (s - (strands - 1) / 2) * inset * 0.62;
+    const depth = ((s % 2) - 0.5) * inset * 0.4;
+    const forkAt = s < 2 ? 0 : 0.18 + (s - 2) * 0.16;
+    const peel = (s - (strands - 1) / 2) * inset * 0.28;
+    pushCurve(
       ribbon,
-      -radius * 0.38,
-      y,
-      (h() - 0.5) * radius * 0.1,
-      radius * 0.32,
-      y - length * 0.04,
-      (h() - 0.5) * radius * 0.1,
-      (h() - 0.5) * radius * 0.2,
-      Math.min(0.78, rank + 0.16),
-      width * 0.7,
-      gain * 0.4,
-      0.3,
+      16,
+      (u) => {
+        const t = forkAt + (1 - forkAt) * u;
+        const drift = Math.sin(t * Math.PI * 1.35 + seed + s * 1.7) * inset * 0.16;
+        const open = Math.sin(u * Math.PI) * peel;
+        return new THREE.Vector3(
+          lane + drift + open + side * 0.001,
+          -t * length,
+          depth + Math.sin(t * Math.PI * 0.8 + s) * inset * 0.1,
+        );
+      },
+      Math.min(0.8, rank + s * 0.04),
+      width,
+      s < 2 ? gain : gain * 0.62,
+      0.38,
+      0.12,
     );
   }
+  const crossZ = (h() - 0.5) * inset * 0.15;
+  pushCurve(
+    ribbon,
+    12,
+    (u) =>
+      new THREE.Vector3(
+        (u - 0.5) * inset * 0.9 + Math.sin(u * Math.PI) * inset * 0.08,
+        -(0.08 + u * 0.84) * length,
+        crossZ,
+      ),
+    Math.min(0.78, rank + 0.12),
+    width * 0.75,
+    gain * 0.4,
+    0.3,
+    0.2,
+  );
 }
 
 const FINGER_SPECS = [
@@ -932,26 +892,23 @@ function fillHead(ribbon: Ribbon, radius: number) {
     }
   }
 
-  // Lower half of the oval: haze out toward the glass, stronger than the crown.
-  // Front-center stays dim and deep so it cannot read as eyes, a nose, or a mouth.
-  for (let ring = 0; ring < 8; ring++) {
-    const theta = 1.52 + (ring / 7) * 1.18;
-    for (let a = 0; a < 12; a++) {
-      const phi = (a / 12) * Math.PI * 2 + ring * 0.31 + (h() - 0.5) * 0.22;
-      const face = Math.abs(Math.cos(phi)) < 0.3 && Math.sin(phi) > 0.72 && theta < 2.1;
-      const lift = face ? 0.55 + h() * 0.08 : 0.76 + h() * 0.18;
+  // Lower half of the oval: interior haze, stronger than the crown, still inside the skull.
+  // No shell on the glass, and front-center stays dim so it cannot read as a face.
+  for (let ring = 0; ring < 6; ring++) {
+    const theta = 1.55 + (ring / 5) * 1.05;
+    for (let a = 0; a < 10; a++) {
+      const phi = (a / 10) * Math.PI * 2 + ring * 0.37 + (h() - 0.5) * 0.2;
+      const face = Math.abs(Math.cos(phi)) < 0.3 && Math.sin(phi) > 0.72 && theta < 2.05;
+      const lift = face ? 0.42 + h() * 0.06 : 0.5 + h() * 0.22;
       wisp(
         theta,
-        0.18,
+        0.22,
         phi,
-        Math.min(0.96, lift),
-        face ? 0.07 : 0.12 + (ring > 3 ? 0.04 : 0),
-        face ? 0.0005 : 0.00105,
-        0.05 + (ring % 5) * 0.03,
+        Math.min(0.74, lift),
+        face ? 0.06 : 0.1 + (ring > 2 ? 0.03 : 0),
+        0.00048,
+        0.06 + (ring % 4) * 0.03,
       );
-      if (a % 2 === 0) {
-        wisp(theta + 0.06, 0.14, phi + 0.45, 0.46 + h() * 0.18, 0.1, 0.00062, 0.12);
-      }
     }
   }
 }
@@ -1240,9 +1197,9 @@ export function createKushim(): Rig {
       7,
       (u) =>
         new THREE.Vector3(
-          side * (0.02 + u * 0.1),
-          0.02 + Math.sin(u * Math.PI) * 0.018,
-          -0.02 + u * 0.04,
+          side * (0.008 + u * 0.036),
+          0.01 + Math.sin(u * Math.PI) * 0.01,
+          -0.01 + u * 0.02,
         ),
       0.26,
       0.0002,
