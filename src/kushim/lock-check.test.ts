@@ -10,7 +10,8 @@ import {
   assertFrontalCamera,
   assertRigLock,
 } from "@/kushim/lock-check";
-import { tickKushim, type Pose } from "@/kushim/motion";
+import { breathCueAt, mouthTransform, type VisemeWeights } from "@/kushim/lipsync";
+import { applySpeechMouth, tickKushim, type Pose } from "@/kushim/motion";
 
 before(() => {
   if (typeof document !== "undefined") return;
@@ -181,6 +182,65 @@ describe("figure lock", () => {
       rig.root.remove(extra);
       extra.geometry.dispose();
       (extra.material as THREE.Material).dispose();
+    } finally {
+      rig.dispose();
+    }
+  });
+
+  it("keeps the mouth inside the lock for a full breath while speaking", () => {
+    const rig = createKushim();
+    try {
+      const restJawY = rig.jaw.position.y;
+      const shapes: VisemeWeights[] = [
+        { aa: 1, ih: 0, ou: 0, ee: 0, oh: 0 },
+        { aa: 0, ih: 1, ou: 0, ee: 0, oh: 0 },
+        { aa: 0, ih: 0, ou: 1, ee: 0, oh: 0 },
+        { aa: 0, ih: 0, ou: 0, ee: 1, oh: 0 },
+        { aa: 0, ih: 0, ou: 0, ee: 0, oh: 1 },
+      ];
+      for (const speaking of [false, true]) {
+        for (const calm of [false, true]) {
+          for (let step = 0; step < 12; step++) {
+            const elapsed = (step / 12) * 2;
+            tickKushim(
+              rig,
+              pose({
+                gesture: calm ? "empathize" : speaking ? "speak" : "idle",
+                speaking,
+                reducedMotion: false,
+              }),
+              0.05,
+              elapsed,
+            );
+            const cue = breathCueAt(elapsed, speaking, calm, false);
+            assert.equal(rig.chest.scale.x, 1 + cue.value * LOCK_CANON.breathX);
+            assert.equal(rig.chest.scale.y, 1 + cue.value * LOCK_CANON.breathY);
+            assert.equal(rig.chest.scale.z, 1 + cue.value * LOCK_CANON.breathZ);
+            assert.equal(rig.chest.position.y, LOCK.proportions.chestY + cue.value * LOCK_CANON.breathLift);
+            const chest = { x: rig.chest.scale.x, y: rig.chest.scale.y, z: rig.chest.scale.z };
+            for (const weights of shapes) {
+              const mouth = mouthTransform(weights, 1, false, { exhale: cue.exhale, chest });
+              applySpeechMouth(rig, mouth, true);
+              assertRigLock(rig, "live");
+              assert.ok(Math.abs(rig.lips.scale.x - 1) <= LOCK_CANON.lipScaleX);
+              assert.ok(Math.abs(rig.lips.scale.y - 1) <= LOCK_CANON.lipScaleY);
+              assert.ok(Math.abs(rig.lips.scale.z - 1) <= LOCK_CANON.lipScaleZ);
+              assert.ok(restJawY - rig.jaw.position.y <= LOCK_CANON.jawDrop + 1e-9);
+            }
+          }
+          const chest = { x: rig.chest.scale.x, y: rig.chest.scale.y, z: rig.chest.scale.z };
+          const open = mouthTransform(shapes[0], 1, false, { exhale: 1, chest: { x: 1, y: 1, z: 1 } });
+          const eased = mouthTransform(shapes[0], 1, false, { exhale: 0, chest });
+          applySpeechMouth(rig, open, true);
+          const openY = rig.jaw.position.y;
+          applySpeechMouth(rig, eased, true);
+          assert.ok(rig.jaw.position.y > openY);
+          assertRigLock(rig, "live");
+        }
+      }
+      applySpeechMouth(rig, { sx: 1, sy: 1, sz: 1, jaw: 0 }, false);
+      assert.equal(rig.jaw.position.y, restJawY);
+      assertRigLock(rig, "live");
     } finally {
       rig.dispose();
     }

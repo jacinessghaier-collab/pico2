@@ -1,6 +1,7 @@
 import type { Rig } from "@/kushim/anatomy";
-import { BLINK, GAZE_LERP, readGaze } from "@/kushim/lipsync";
+import { BLINK, breathCueAt, GAZE_LERP, JAW_DROP, readGaze } from "@/kushim/lipsync";
 import { LOCK, type Gesture } from "@/kushim/lock";
+import { LOCK_CANON } from "@/kushim/lock-check";
 import { stageAt } from "@/kushim/stages";
 import { sampleSpeechMouth } from "@/kushim/speech";
 
@@ -58,6 +59,29 @@ function dampAxis(obj: { rotation: { x: number; y: number; z: number } }, target
   obj.rotation.z = damp(obj.rotation.z, target.z, dt, speed);
 }
 
+function clampAround(value: number, rest: number, slack: number) {
+  if (!Number.isFinite(value)) return rest;
+  return Math.min(rest + slack, Math.max(rest - slack, value));
+}
+
+export function applySpeechMouth(
+  rig: Rig,
+  mouth: { sx: number; sy: number; sz: number; jaw: number },
+  active: boolean,
+) {
+  rig.lips.scale.set(
+    clampAround(active ? mouth.sx : 1, 1, LOCK_CANON.lipScaleX),
+    clampAround(active ? mouth.sy : 1, 1, LOCK_CANON.lipScaleY),
+    clampAround(active ? mouth.sz : 1, 1, LOCK_CANON.lipScaleZ),
+  );
+  const restJaw = typeof rig.jaw.userData.restX === "number" ? rig.jaw.userData.restX : 0;
+  const restJawY = typeof rig.jaw.userData.restY === "number" ? rig.jaw.userData.restY : rig.jaw.position.y;
+  const raw = active && Number.isFinite(mouth.jaw) ? mouth.jaw * JAW_DROP : 0;
+  const drop = Math.min(LOCK_CANON.jawDrop, Math.max(0, raw));
+  rig.jaw.rotation.x = restJaw;
+  rig.jaw.position.y = restJawY - drop;
+}
+
 export function tickKushim(rig: Rig, pose: Pose, dt: number, elapsed: number) {
   const stage = stageAt(pose.hour);
   const targets = poseTargets(pose.gesture);
@@ -81,11 +105,15 @@ export function tickKushim(rig: Rig, pose: Pose, dt: number, elapsed: number) {
   dampAxis(rig.head, { x: targets.head.x + nod, y: targets.head.y + yaw, z: targets.head.z }, dt, 5);
 
   const calm = pose.gesture === "empathize";
-  const hz = pose.speaking ? 1.35 : calm ? 0.55 : 0.85;
-  const breath = pose.reducedMotion ? 0 : Math.sin(elapsed * hz * Math.PI * 2);
-  const lift = breath * 0.012;
-  rig.chest.scale.set(1 + breath * 0.008, 1 + lift, 1 + breath * 0.01);
-  rig.chest.position.y = LOCK.proportions.chestY + breath * 0.008;
+  const cue = breathCueAt(elapsed, pose.speaking, calm, pose.reducedMotion);
+  const breath = cue.value;
+  const chest = {
+    x: 1 + breath * LOCK_CANON.breathX,
+    y: 1 + breath * LOCK_CANON.breathY,
+    z: 1 + breath * LOCK_CANON.breathZ,
+  };
+  rig.chest.scale.set(chest.x, chest.y, chest.z);
+  rig.chest.position.y = LOCK.proportions.chestY + breath * LOCK_CANON.breathLift;
 
   const curlBase = pose.gesture === "think" ? 0.45 : pose.gesture === "explain" ? 0.05 : 0.18;
   const life = !pose.reducedMotion && stage.fingerLife ? 0.05 : 0;
@@ -129,13 +157,8 @@ export function tickKushim(rig: Rig, pose: Pose, dt: number, elapsed: number) {
   const pulse = pose.reducedMotion ? 1 : 1 + Math.sin(elapsed * 3.4) * 0.08;
   rig.core.scale.setScalar(pulse * (pose.shoulderTopic && stage.shoulderListen ? 1.15 : 1));
 
-  const mouth = sampleSpeechMouth(elapsed, pose.reducedMotion);
-  const moving = pose.speaking && mouth.speaking;
-  rig.lips.scale.set(moving ? mouth.sx : 1, moving ? mouth.sy : 1, moving ? mouth.sz : 1);
-  const restJaw = typeof rig.jaw.userData.restX === "number" ? rig.jaw.userData.restX : 0;
-  const restJawY = typeof rig.jaw.userData.restY === "number" ? rig.jaw.userData.restY : rig.jaw.position.y;
-  rig.jaw.rotation.x = restJaw;
-  rig.jaw.position.y = restJawY - (moving ? mouth.jaw * 0.05 : 0);
+  const mouth = sampleSpeechMouth(pose.reducedMotion, { exhale: cue.exhale, chest });
+  applySpeechMouth(rig, mouth, pose.speaking && mouth.speaking);
 
   const blink = (rig.head.userData.blink ?? { next: BLINK.minSec, until: -1 }) as { next: number; until: number };
   rig.head.userData.blink = blink;

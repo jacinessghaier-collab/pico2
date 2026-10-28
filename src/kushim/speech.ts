@@ -5,6 +5,7 @@ import {
   mouthTransform,
   scheduleVisemes,
   weightsAt,
+  type MouthBreath,
   type VisemeFrame,
 } from "@/kushim/lipsync";
 
@@ -118,7 +119,7 @@ function attachAnalyser(audio: HTMLAudioElement) {
   };
 }
 
-export function sampleSpeechMouth(elapsed: number, reduced: boolean) {
+export function sampleSpeechMouth(reduced: boolean, breath?: MouthBreath) {
   const rest = { speaking: false, level: 0, sx: 1, sy: 1, sz: 1, jaw: 0 };
   if (!bus.active) return rest;
   let elapsedMs = 0;
@@ -132,7 +133,7 @@ export function sampleSpeechMouth(elapsed: number, reduced: boolean) {
   } else {
     elapsedMs = performance.now() - bus.startedAt;
   }
-  const shaped = mouthTransform(weightsAt(bus.frames, elapsedMs), level, elapsed, reduced);
+  const shaped = mouthTransform(weightsAt(bus.frames, elapsedMs), level, reduced, breath);
   return { speaking: true, level, ...shaped };
 }
 

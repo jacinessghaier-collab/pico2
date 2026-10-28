@@ -121,12 +121,20 @@ export const CHANGES: Change[] = [
     body: "Der erste Satz ist kürzer als der zweite. Danach genau eine kurze Pause: im Browser eine Wartezeit, bei Leo das Tag [pause]. Keine Satzmelodie und keine neue Geste.",
     source: "Stundenplan",
   },
+  {
+    id: "mouth-breath",
+    time: "06:00",
+    step: null,
+    title: "Mund gegen Atem",
+    body: "Die Mundöffnung folgt dem vorhandenen Atem. Lautstärke setzt die Stärke, das Einatmen nimmt sechs Prozent weg, die Öffnung wird durch die Brustskala geteilt. Der eigene Sinus auf aa ist weg. Brusttempo und lock.ts bleiben.",
+    source: "Stundenplan",
+  },
 ];
 
 export const DONE_STEP = 9;
 export const NEXT_STEP = 10;
-export const NEXT_RUN_LABEL = "06:00";
+export const NEXT_RUN_LABEL = "07:00";
 
-/** Hourly pipeline. Step 5 memory is in. Step 6 is still mouth opening against breath. Melody stays deferred. */
-export const HOURLY_DONE = 5;
-export const HOURLY_NEXT = 6;
+/** Hourly pipeline. Step 6 mouth-against-breath is in. Melody stays deferred. */
+export const HOURLY_DONE = 6;
+export const HOURLY_NEXT = 7;
