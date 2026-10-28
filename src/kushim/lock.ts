@@ -34,3 +34,14 @@ export type Gesture = (typeof GESTURES)[number];
 export function isGesture(value: string): value is Gesture {
   return (GESTURES as readonly string[]).includes(value);
 }
+
+/** Values above are the masterprompt. Mutation throws; lock-check compares the figure to them. */
+function freezeLockTree(value: object) {
+  Object.freeze(value);
+  for (const child of Object.values(value)) {
+    if (child !== null && typeof child === "object" && !Object.isFrozen(child))
+      freezeLockTree(child);
+  }
+}
+
+freezeLockTree(LOCK);
