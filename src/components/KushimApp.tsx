@@ -6,11 +6,22 @@ import { isRepairRequest, shapeReply, trimInterrupted } from "@/kushim/dialogue"
 import { fallbackReply } from "@/kushim/fallback";
 import type { Gesture } from "@/kushim/lock";
 import type { Pose } from "@/kushim/motion";
+import { absorbMemory, loadMemory, memoryPrompt, saveMemory } from "@/kushim/memory";
 import { askKushim, speakKushim } from "@/kushim/server";
 import { speakBrowser, speakLeo, spokenFraction, stopSpeech } from "@/kushim/speech";
 import { DONE_STEP, NEXT_STEP, STEPS } from "@/kushim/stand";
 import { stageAt } from "@/kushim/stages";
-import { loadThread, loadVoice, rememberName, saveThread, saveVoice, trainingHour, type Turn } from "@/kushim/training";
+import {
+  clearName,
+  loadThread,
+  loadVoice,
+  nameInText,
+  rememberName,
+  saveThread,
+  saveVoice,
+  trainingHour,
+  type Turn,
+} from "@/kushim/training";
 
 const emptyPose = (): Pose => ({
   gesture: "idle",
@@ -164,7 +175,8 @@ export function KushimApp() {
     setNote("");
     setListening(false);
     const history = interrupted ? trimInterrupted(threadRef.current, fraction) : threadRef.current;
-    const previous = [...history].reverse().find((item) => item.role === "assistant")?.content ?? "";
+    const previous =
+      [...history].reverse().find((item) => item.role === "assistant")?.content ?? "";
     const next: Turn[] = [...history, { role: "user", content: clean }];
     threadRef.current = next;
     setMsgs(next);
@@ -173,15 +185,29 @@ export function KushimApp() {
     setShoulder(mentionsShoulder(clean));
     setAttention(1);
     const hourNow = trainingHour();
-    const nameNow = rememberName(clean);
+    const introduced = nameInText(clean);
+    let nameNow = rememberName(clean);
+    const windowTurns = stageAt(hourNow).memoryTurns;
+    const absorbed = absorbMemory(loadMemory(), clean, next, windowTurns);
+    if (absorbed.clearName && !introduced) {
+      clearName();
+      nameNow = "";
+    }
+    saveMemory(absorbed.memory);
     setHour(hourNow);
-    const memory = next.slice(-stageAt(hourNow).memoryTurns);
-    let reply = fallbackReply(clean, { name: nameNow, previous });
+    const recent = next.slice(-windowTurns);
+    let reply = fallbackReply(clean, { name: nameNow, previous, memory: absorbed.memory });
     const repair = isRepairRequest(clean) && previous.trim().length > 0;
     if (!repair) {
       try {
         const result = await ask({
-          data: { turns: memory, hour: hourNow, name: nameNow, interrupted },
+          data: {
+            turns: recent,
+            hour: hourNow,
+            name: nameNow,
+            interrupted,
+            memory: memoryPrompt(absorbed.memory),
+          },
         });
         if (mine !== run.current) return;
         if (result.ok) reply = { say: result.say, gesture: result.gesture };
@@ -258,7 +284,8 @@ export function KushimApp() {
             Stunde {hour} · {stage.label}
           </p>
           <p className="text-xs text-mist">
-            Stufe {DONE_STEP} von {STEPS.length} · Nächste: {STEPS.find((item) => item.id === NEXT_STEP)?.title}
+            Stufe {DONE_STEP} von {STEPS.length} · Nächste:{" "}
+            {STEPS.find((item) => item.id === NEXT_STEP)?.title}
           </p>
         </div>
         <div className="pointer-events-auto flex items-center gap-2">
@@ -292,7 +319,10 @@ export function KushimApp() {
         <div className="flex flex-col gap-3">
           {msgs.length === 0 ? <p className="text-sm text-mist">Er steht. Sprich ihn an.</p> : null}
           {msgs.slice(-8).map((item, index) => (
-            <p key={`${item.role}-${index}`} className={item.role === "user" ? "text-sm text-kern" : "text-sm text-strom"}>
+            <p
+              key={`${item.role}-${index}`}
+              className={item.role === "user" ? "text-sm text-kern" : "text-sm text-strom"}
+            >
               {item.content}
             </p>
           ))}
@@ -301,7 +331,10 @@ export function KushimApp() {
         </div>
       </div>
 
-      <form onSubmit={onSubmit} className="pointer-events-auto absolute inset-x-0 bottom-4 z-10 flex justify-center px-4">
+      <form
+        onSubmit={onSubmit}
+        className="pointer-events-auto absolute inset-x-0 bottom-4 z-10 flex justify-center px-4"
+      >
         <div
           className={
             "flex w-full max-w-xl items-center gap-1 rounded-full border bg-void px-1 py-1 " +
