@@ -65,9 +65,9 @@ function Avatar({
     lockSeen.current = true;
     lockAcc.current = 0;
     try {
-      assertRigLock(rig, "live");
+      assertRigLock(rig, "live", scene);
       assertFrontalCamera(camera);
-      assertClearLock(gl);
+      assertClearLock(gl, scene);
     } catch (error) {
       reported.current = true;
       onBreach(error instanceof Error ? error.message : String(error));
@@ -86,10 +86,10 @@ export function KushimScene({ poseRef }: { poseRef: RefObject<Pose> }) {
       dpr={[1, 1.6]}
       gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
       camera={{ fov: 26, near: 0.08, far: 40, position: [0, 1, 6] }}
-      onCreated={({ gl }) => {
+      onCreated={({ gl, scene }) => {
         gl.setClearColor(LOCK.void, 1);
         gl.toneMapping = THREE.NoToneMapping;
-        assertClearLock(gl);
+        assertClearLock(gl, scene);
       }}
     >
       <Framing />

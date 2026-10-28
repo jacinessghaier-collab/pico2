@@ -4,6 +4,8 @@
  * jaw drop, gaze, blink) is the envelope from tickKushim and lipsync —
  * update those constants in the same change.
  * Silhouette, palette, the single red site, void, and the straight-on camera stay put.
+ * The re-read also rejects a swapped shader or geometry, a reparented or hidden
+ * part, a yawed or upside-down camera, and a scene that covers the void.
  */
 import * as THREE from "three";
 import { LOCK } from "@/kushim/lock";
@@ -77,6 +79,15 @@ export const LOCK_CANON = {
   eyeOpacityMin: 0.15,
 } as const;
 
+function freezeCanon(value: object) {
+  Object.freeze(value);
+  for (const child of Object.values(value)) {
+    if (child !== null && typeof child === "object" && !Object.isFrozen(child)) freezeCanon(child);
+  }
+}
+
+freezeCanon(LOCK_CANON);
+
 export type MaterialRole =
   "glass" | "glass-bright" | "nerve" | "signal" | "core" | "sprite" | "ring";
 
@@ -108,6 +119,14 @@ type Xform = {
   p: [number, number, number];
   r: [number, number, number];
   s: [number, number, number];
+  parent: THREE.Object3D | null;
+  geometry: THREE.BufferGeometry | null;
+};
+
+type SealedShader = {
+  vertex: string;
+  fragment: string;
+  keys: string;
 };
 
 type Baseline = {
@@ -120,6 +139,7 @@ type Tint = { inner: string; outer: string };
 
 const roles = new WeakMap<THREE.Material, MaterialRole>();
 const tints = new WeakMap<THREE.Texture, Tint>();
+const shaders = new WeakMap<THREE.Material, SealedShader>();
 const baselines = new WeakMap<THREE.Object3D, Baseline>();
 
 const EPS = 1e-4;
@@ -202,6 +222,9 @@ function expectGlassLook(material: THREE.Material, de: string, en: string, side?
   if (material.blending !== THREE.AdditiveBlending) {
     breach(`${de} mischt nicht mehr additiv.`, `${en} no longer uses additive blending.`);
   }
+  if (material.premultipliedAlpha) {
+    breach(`${de} mischt vormultipliziert.`, `${en} uses premultiplied alpha.`);
+  }
   const shader = material as THREE.ShaderMaterial;
   if (side !== undefined && shader.isShaderMaterial && shader.side !== side) {
     breach(
@@ -214,6 +237,13 @@ function expectGlassLook(material: THREE.Material, de: string, en: string, side?
 export function assertLockTable() {
   if (!Object.isFrozen(LOCK) || !Object.isFrozen(LOCK.proportions)) {
     breach("LOCK ist nicht eingefroren.", "LOCK is not frozen.");
+  }
+  if (!Object.isFrozen(LOCK_CANON) || !Object.isFrozen(LOCK_CANON.proportions)) {
+    breach("Die Vergleichstabelle ist nicht eingefroren.", "The comparison table is not frozen.");
+  }
+  const top = Object.keys(LOCK).sort().join(",");
+  if (top !== "kern,proportions,signal,strom,void") {
+    breach("LOCK hat andere Schlüssel.", "LOCK has different keys.");
   }
   const colors = ["void", "strom", "kern", "signal"] as const;
   for (const key of colors) {
@@ -245,6 +275,27 @@ export function assertLockTable() {
 
 export function markMaterial(material: THREE.Material, role: MaterialRole) {
   roles.set(material, role);
+  const shader = material as THREE.ShaderMaterial;
+  if (!shader.isShaderMaterial) return;
+  shaders.set(material, {
+    vertex: shader.vertexShader,
+    fragment: shader.fragmentShader,
+    keys: Object.keys(shader.uniforms ?? {}).sort().join(","),
+  });
+}
+
+function auditShader(material: THREE.Material) {
+  const shader = material as THREE.ShaderMaterial;
+  if (!shader.isShaderMaterial) return;
+  const sealed = shaders.get(material);
+  if (!sealed) breach("Shader ohne Siegel.", "Shader is missing its seal.");
+  if (shader.vertexShader !== sealed.vertex || shader.fragmentShader !== sealed.fragment) {
+    breach("Der Shader der Figur wurde ausgetauscht.", "The figure shader was replaced.");
+  }
+  const keys = Object.keys(shader.uniforms ?? {}).sort().join(",");
+  if (keys !== sealed.keys) {
+    breach("Die Shader-Uniforms wurden erweitert.", "Shader uniforms were extended.");
+  }
 }
 
 export function markTint(texture: THREE.Texture, inner: string, outer: string) {
@@ -267,11 +318,19 @@ export function sealLookColor(color: THREE.Color) {
   Object.freeze(color);
 }
 
+function geometryOf(obj: THREE.Object3D): THREE.BufferGeometry | null {
+  const geo = (obj as THREE.Mesh).geometry as THREE.BufferGeometry | undefined;
+  if (!geo || !geo.isBufferGeometry) return null;
+  return geo;
+}
+
 function readXform(obj: THREE.Object3D): Xform {
   return {
     p: [obj.position.x, obj.position.y, obj.position.z],
     r: [obj.rotation.x, obj.rotation.y, obj.rotation.z],
     s: [obj.scale.x, obj.scale.y, obj.scale.z],
+    parent: obj.parent,
+    geometry: geometryOf(obj),
   };
 }
 
@@ -524,6 +583,7 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
     for (const material of materialsOf(obj)) {
       const role = roles.get(material);
       if (!role) breach("Unmarkiertes Material an der Figur.", "Unmarked material on the figure.");
+      auditShader(material);
       bump(role, material);
       if ((role === "signal" || role === "core" || role === "ring") && !under(obj, rig.shoulderR)) {
         breach(
@@ -650,6 +710,7 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
     !points.transparent ||
     points.depthWrite ||
     points.blending !== THREE.AdditiveBlending ||
+    points.premultipliedAlpha ||
     !points.sizeAttenuation
   ) {
     breach(
@@ -736,6 +797,48 @@ function auditSpokenPart(obj: THREE.Object3D, rig: LockedRig, baseline: Baseline
   mustClose(obj.scale.z, base.s[2], "Augenskalierung driftet", "Eye scale drifted");
 }
 
+function auditPresence(rig: LockedRig) {
+  rig.root.traverse((obj) => {
+    if (!obj.visible) {
+      breach("Ein gesperrtes Teil ist ausgeblendet.", "A locked part is hidden.");
+    }
+    if (obj.layers && obj.layers.mask !== 1) {
+      breach(
+        "Ein Teil liegt auf einer anderen Sichtbarkeitsebene.",
+        "A part is on another visibility layer.",
+      );
+    }
+  });
+}
+
+function auditRootSeat(root: THREE.Object3D) {
+  const parent = root.parent;
+  if (!parent) return;
+  if (!(parent as THREE.Scene).isScene) {
+    breach(
+      "Die Figur hängt nicht mehr direkt in der Szene.",
+      "The figure is no longer directly in the scene.",
+    );
+  }
+  mustClose(parent.position.x, 0, "Szenenversatz X", "Scene offset X");
+  mustClose(parent.position.y, 0, "Szenenversatz Y", "Scene offset Y");
+  mustClose(parent.position.z, 0, "Szenenversatz Z", "Scene offset Z");
+  mustClose(parent.rotation.x, 0, "Szenendrehung X", "Scene rotation X");
+  mustClose(parent.rotation.y, 0, "Szenendrehung Y", "Scene rotation Y");
+  mustClose(parent.rotation.z, 0, "Szenendrehung Z", "Scene rotation Z");
+  mustClose(parent.scale.x, 1, "Szenenskalierung X", "Scene scale X");
+  mustClose(parent.scale.y, 1, "Szenenskalierung Y", "Scene scale Y");
+  mustClose(parent.scale.z, 1, "Szenenskalierung Z", "Scene scale Z");
+}
+
+function auditSceneSeat(rig: LockedRig, scene: { children: readonly THREE.Object3D[] }) {
+  for (const child of scene.children) {
+    if (child !== rig.root) {
+      breach("Etwas Fremdes steht im Raum.", "Something else is standing in the room.");
+    }
+  }
+}
+
 function auditBaseline(rig: LockedRig) {
   const baseline = baselines.get(rig.root);
   if (!baseline) {
@@ -766,13 +869,20 @@ function auditBaseline(rig: LockedRig) {
   });
   for (const obj of baseline.nodes) {
     if (!seen.has(obj)) breach("Ein gesperrtes Teil fehlt.", "A locked part is missing.");
+    const base = baseline.xform.get(obj);
+    if (!base) breach("Lock-Basis unvollständig.", "Lock baseline is incomplete.");
+    if (geometryOf(obj) !== base.geometry) {
+      breach("Die Geometrie wurde ersetzt.", "Geometry was replaced.");
+    }
+    if (obj === rig.root) auditRootSeat(obj);
+    else if (obj.parent !== base.parent) {
+      breach("Ein Teil wurde umgehängt.", "A part was reparented.");
+    }
     if (obj === rig.chest || obj === rig.core) continue;
     if (obj === rig.lips || obj === rig.jaw || rig.eyes?.includes(obj)) {
       auditSpokenPart(obj, rig, baseline);
       continue;
     }
-    const base = baseline.xform.get(obj);
-    if (!base) breach("Lock-Basis unvollständig.", "Lock baseline is incomplete.");
     mustClose(obj.position.x, base.p[0], "Position X driftet", "Position X drifted");
     mustClose(obj.position.y, base.p[1], "Position Y driftet", "Position Y drifted");
     mustClose(obj.position.z, base.p[2], "Position Z driftet", "Position Z drifted");
@@ -790,7 +900,11 @@ function auditBaseline(rig: LockedRig) {
   }
 }
 
-export function assertRigLock(rig: LockedRig, phase: Phase = "live") {
+export function assertRigLock(
+  rig: LockedRig,
+  phase: Phase = "live",
+  scene?: { children: readonly THREE.Object3D[] },
+) {
   assertLockTable();
   if (
     !rig?.root ||
@@ -803,17 +917,30 @@ export function assertRigLock(rig: LockedRig, phase: Phase = "live") {
   ) {
     breach("Die Figur ist unvollständig.", "The figure is incomplete.");
   }
+  auditPresence(rig);
   auditChain(rig);
   auditSkeleton(rig, phase);
   auditMaterials(rig, phase);
+  if (scene) auditSceneSeat(rig, scene);
   if (phase === "live") auditBaseline(rig);
 }
 
-export function assertClearLock(gl: {
-  toneMapping: number;
-  getClearColor: (target: THREE.Color) => THREE.Color;
-  getClearAlpha: () => number;
-}) {
+type VoidScene = {
+  background: unknown;
+  fog: unknown;
+  overrideMaterial: unknown;
+  environment?: unknown;
+};
+
+export function assertClearLock(
+  gl: {
+    toneMapping: number;
+    outputColorSpace?: string;
+    getClearColor: (target: THREE.Color) => THREE.Color;
+    getClearAlpha: () => number;
+  },
+  scene: VoidScene,
+) {
   assertLockTable();
   const color = new THREE.Color();
   gl.getClearColor(color);
@@ -837,24 +964,71 @@ export function assertClearLock(gl: {
       "Tone mapping recolors the locked palette.",
     );
   }
+  if (gl.outputColorSpace !== undefined && gl.outputColorSpace !== THREE.SRGBColorSpace) {
+    breach(
+      "Der Farbraum färbt die Palette um.",
+      "The color space recolors the palette.",
+    );
+  }
+  if (scene.background) {
+    breach(
+      "Der Void wurde durch einen Hintergrund ersetzt.",
+      "The void was replaced by a background.",
+    );
+  }
+  if (scene.fog) {
+    breach("Nebel liegt über dem Void.", "Fog covers the void.");
+  }
+  if (scene.overrideMaterial) {
+    breach(
+      "Ein Ersatzmaterial überdeckt die Figur.",
+      "An override material covers the figure.",
+    );
+  }
+  if (scene.environment) {
+    breach(
+      "Eine Umgebungskarte liegt über dem Void.",
+      "An environment map covers the void.",
+    );
+  }
 }
 
 export function assertFrontalCamera(camera: {
   fov?: number;
   position: { x: number };
-  rotation: { z: number };
+  rotation: { y?: number; z: number };
+  up?: { x: number; y: number; z: number };
 }) {
-  if (camera.fov !== undefined && Math.abs(camera.fov - LOCK_CANON.fov) > 1e-3) {
-    breach(
-      `Kamera-FOV ist ${camera.fov}, erwartet ${LOCK_CANON.fov}.`,
-      `Camera FOV is ${camera.fov}, expected ${LOCK_CANON.fov}.`,
-    );
+  if (camera.fov !== undefined) {
+    if (!Number.isFinite(camera.fov) || Math.abs(camera.fov - LOCK_CANON.fov) > 1e-3) {
+      breach(
+        `Kamera-FOV ist ${camera.fov}, erwartet ${LOCK_CANON.fov}.`,
+        `Camera FOV is ${camera.fov}, expected ${LOCK_CANON.fov}.`,
+      );
+    }
   }
   if (!Number.isFinite(camera.position.x) || Math.abs(camera.position.x) > 1e-3) {
     breach("Kamera ist nicht frontal.", "Camera is not straight-on.");
   }
+  if (camera.rotation.y !== undefined) {
+    if (!Number.isFinite(camera.rotation.y) || Math.abs(camera.rotation.y) > 1e-2) {
+      breach("Kamera blickt seitlich.", "Camera is yawed off the figure.");
+    }
+  }
   if (!Number.isFinite(camera.rotation.z) || Math.abs(camera.rotation.z) > 1e-2) {
     breach("Kamera ist gerollt.", "Camera is rolled.");
+  }
+  if (camera.up) {
+    if (
+      !Number.isFinite(camera.up.x) ||
+      !Number.isFinite(camera.up.y) ||
+      !Number.isFinite(camera.up.z) ||
+      Math.abs(camera.up.x) > 1e-2 ||
+      camera.up.y < 0.5 ||
+      Math.abs(camera.up.z) > 1e-2
+    ) {
+      breach("Kamera steht auf dem Kopf.", "Camera is upside down.");
+    }
   }
 }
 
