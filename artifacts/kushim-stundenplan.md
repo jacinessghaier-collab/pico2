@@ -18,4 +18,16 @@ Atem, Rückkanal beim Tippen, Einatmen vor dem Wort, Sätze mit Pause, Gedächtn
 
 Name höchstens einmal und nie erzwungen. Unterbrechung bricht den gesprochenen Satz ab (`trimInterrupted`), die nächste Antwort gilt dem neuen Thema. Rückfrage nur bei offenem Satz. Bei „nicht verstanden“ derselbe Inhalt in einem Satz, ohne Entschuldigung. Lippen: Viseme aa/ih/ou/ee/oh, bei Leo aus den Frequenzbändern, sonst im Texttakt. Blick mit Lerp 0,10. Blinzeln beider Augen ohne Silbenkopplung.
 
-Bau: Stufe 8 von 10 erledigt, nächste Stufe ist Sprache (Satzmelodie). Stundenpipeline: Schritt 5 Gedächtnis steht in `src/kushim/memory.ts` (Wohnort, Herkunft, Arbeit, Sprache, Mag, Bezug, Merken, plus Thema aus Zügen außerhalb des Fensters). Nächster Schritt ist die Mundöffnung gegen den Atem. Marker: `src/kushim/stand.ts`.
+Der erste Satz ist kürzer als der zweite. Danach eine kurze Pause: im Browser `FIRST_PAUSE_MS`, bei Leo einmal `[pause]`. Der Chat zeigt die Pause nicht. Satzmelodie bleibt ausgesetzt.
+
+Bau: Stufe 9 von 10 erledigt (kürzerer erster Satz). Nächste Stufe ist der Stabilitätscheck; der Lock liegt schon. Satzmelodie bleibt ausgesetzt. Stundenpipeline: Schritt 5 Gedächtnis steht in `src/kushim/memory.ts` (Wohnort, Herkunft, Arbeit, Sprache, Mag, Bezug, Merken, plus Thema aus Zügen außerhalb des Fensters). Nächster Stundenschritt bleibt die Mundöffnung gegen den Atem. Marker: `src/kushim/stand.ts`.
+
+## Fünf Schritte voraus
+
+Geprüft. Abkürzungen stehen dabei. Die Satzmelodie ist keiner dieser Schritte.
+
+1. Mundöffnung gegen den ruhigen Atem. Nur die Viseme-Stärke, nicht der Brustkorb und nicht `lock.ts`.
+2. Wenn die eine Pause falsch liegt, nur `FIRST_PAUSE_MS` ändern. Keine Tonhöhe, keine weiteren Sprech-Tags.
+3. Bildzeit der laufenden Szene. Kein Bloom, keine zweite Aura, kein neues Shader-Material.
+4. Stabilitätscheck nur erneut lesen. `lock-check.ts` wirft schon. Kein Eingriff, solange der Test steht.
+5. Neue Antwortform nur in `shapeReply`. Name, Abbruch, Reparatur und der kurze erste Satz sind schon dort.

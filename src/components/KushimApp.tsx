@@ -2,7 +2,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { Mic, Send, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ComponentType, FormEvent, RefObject } from "react";
-import { isRepairRequest, shapeReply, trimInterrupted } from "@/kushim/dialogue";
+import { isRepairRequest, shapeReply, textForLeo, trimInterrupted } from "@/kushim/dialogue";
 import { fallbackReply } from "@/kushim/fallback";
 import type { Gesture } from "@/kushim/lock";
 import type { Pose } from "@/kushim/motion";
@@ -146,7 +146,7 @@ export function KushimApp() {
     setSpeaking(true);
     try {
       if (leo) {
-        const audio = await speak({ data: { text } });
+        const audio = await speak({ data: { text: textForLeo(text) } });
         if (mine !== run.current) return;
         if (audio.ok) await speakLeo(audio.audio, audio.mime, text);
         else await speakBrowser(text, stage.speechRate, stage.sentenceGapMs, langOf(text));

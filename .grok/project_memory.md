@@ -7,3 +7,4 @@
 - Additional high-value references: ektogamat holographic material (Fresnel + scanlines), talk2avatar (viseme-based lip-sync with Kokoro), lumi-3d-companion (gaze + click interactions), webwaifu3 (semantic memory). [2026-10-27]
 - Next optimizations: modular energy flow layer (bone-attached lines/particles driven by audio/activity), emotion-tagged gestures from LLM, improved viseme mapping, hourly delta application via Git patches or agent loop. [2026-10-27]
 - Lip-sync is on the procedural mouth (FFT for Leo, timed visemes otherwise). three-vrm-lip-sync skipped to keep the locked rig. Stand DONE 8 / NEXT 9. [2026-10-28]
+- First spoken sentence is shorter than the second, with one short pause and no melody. Stand DONE 9 / NEXT 10. [2026-10-28]

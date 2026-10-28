@@ -24,7 +24,8 @@ export const STAGES: Stage[] = [
   {
     hour: 0,
     label: "Atem und Strom",
-    prompt: "Atme ruhig. Antworte in ein bis drei kurzen Sätzen.",
+    prompt:
+      "Atme ruhig. Antworte in ein bis drei kurzen Sätzen. Der erste Satz ist kürzer als der zweite.",
     filament: 0.86,
     backchannel: false,
     inhaleMs: 80,

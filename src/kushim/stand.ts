@@ -62,7 +62,8 @@ export const STEPS: Step[] = [
   {
     id: 9,
     title: "Sprache",
-    detail: "Tempo, Pausen, Lippen. Satzmelodie und ein kürzerer erster Satz fehlen noch.",
+    detail:
+      "Erster Satz kürzer als der zweite, danach eine kurze Pause. Lippen und Tempo stehen. Satzmelodie bleibt ausgesetzt.",
   },
   {
     id: 10,
@@ -112,12 +113,20 @@ export const CHANGES: Change[] = [
     body: "Neben dem Namen bleiben wenige Schlüssel und ein kurzes Thema aus Zügen, die aus dem Fenster gefallen sind. Der Systemtext bekommt das einmal, ohne das ganze Protokoll.",
     source: "Stundenplan",
   },
+  {
+    id: "short-first",
+    time: "05:00",
+    step: 9,
+    title: "Kürzerer erster Satz",
+    body: "Der erste Satz ist kürzer als der zweite. Danach genau eine kurze Pause: im Browser eine Wartezeit, bei Leo das Tag [pause]. Keine Satzmelodie und keine neue Geste.",
+    source: "Stundenplan",
+  },
 ];
 
-export const DONE_STEP = 8;
-export const NEXT_STEP = 9;
-export const NEXT_RUN_LABEL = "04:00";
+export const DONE_STEP = 9;
+export const NEXT_STEP = 10;
+export const NEXT_RUN_LABEL = "06:00";
 
-/** Hourly pipeline. Step 5 memory is in the live dialogue. */
+/** Hourly pipeline. Step 5 memory is in. Step 6 is still mouth opening against breath. Melody stays deferred. */
 export const HOURLY_DONE = 5;
 export const HOURLY_NEXT = 6;

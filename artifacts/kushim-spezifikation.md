@@ -1,5 +1,5 @@
 # KUSHIM-SPEZIFIKATION
-Stand: Stufe 8 abgeschlossen. Laufend Stufe 9 Sprache: Lippensynchron ist in der Szene, Satzmelodie und ein kürzerer erster Satz fehlen noch. Danach Stufe 10, nur der Lock-Check.
+Stand: Stufe 9 abgeschlossen. Der erste Satz ist kürzer als der zweite, mit einer kurzen Pause. Satzmelodie bleibt ausgesetzt. Stufe 10 ist der vorhandene Lock-Check.
 Gesperrte Bildausgabe bleibt `kushim-aussehen-masterprompt.md`. Silhouette, Farben, Signal, Kamera nicht neu erfinden.
 
 ## Körper

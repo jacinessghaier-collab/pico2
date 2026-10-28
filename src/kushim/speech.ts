@@ -1,3 +1,4 @@
+import { gapAfterSentence, spokenLines } from "@/kushim/dialogue";
 import {
   estimateSpeechMs,
   levelFromBins,
@@ -149,10 +150,7 @@ function pickVoice(langHint: string) {
 
 export function speakBrowser(text: string, rate: number, gapMs: number, lang: string) {
   const mine = ++token;
-  const parts = text
-    .split(/(?<=[.!?])\s+/)
-    .map((part) => part.trim())
-    .filter(Boolean);
+  const parts = spokenLines(text);
   const lines = parts.length > 0 ? parts : [text];
   return new Promise<void>((resolve) => {
     const step = (index: number) => {
@@ -180,7 +178,7 @@ export function speakBrowser(text: string, rate: number, gapMs: number, lang: st
           return;
         }
         bus.active = false;
-        window.setTimeout(() => step(index + 1), gapMs);
+        window.setTimeout(() => step(index + 1), gapAfterSentence(index, lines.length, gapMs));
       };
       utterance.onerror = () => {
         resetBus();
@@ -214,8 +212,9 @@ export async function speakLeo(audioBase64: string, mime: string, text: string) 
   bus.audio = audio;
   bus.partIndex = 0;
   bus.partCount = 1;
-  bus.frames = scheduleVisemes(text, estimateSpeechMs(text, 1));
-  bus.durationMs = estimateSpeechMs(text, 1);
+  const visemeText = spokenLines(text).join(" ");
+  bus.frames = scheduleVisemes(visemeText, estimateSpeechMs(visemeText, 1));
+  bus.durationMs = estimateSpeechMs(visemeText, 1);
   bus.startedAt = performance.now();
   bus.active = true;
   try {
@@ -226,7 +225,7 @@ export async function speakLeo(audioBase64: string, mime: string, text: string) 
   audio.onloadedmetadata = () => {
     if (mine !== token || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
     bus.durationMs = audio.duration * 1000;
-    bus.frames = scheduleVisemes(text, bus.durationMs);
+    bus.frames = scheduleVisemes(visemeText, bus.durationMs);
   };
   await new Promise<void>((resolve) => {
     audio.onended = () => resolve();

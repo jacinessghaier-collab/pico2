@@ -18,7 +18,7 @@ export function fallbackReply(
     gesture = "acknowledge";
   } else if (/schulter|schmerz|weh|rot|signal|aura/.test(q)) {
     say =
-      "Das Rot sitzt nur in meiner rechten Schulter. Es markiert die Stelle, es erklärt sie nicht. Wenn du dort etwas trägst, kannst du es sagen.";
+      "Nur die rechte Schulter. Das Rot markiert die Stelle, es erklärt sie nicht. Wenn du dort etwas trägst, kannst du es sagen.";
     gesture = "empathize";
   } else if (/wer bist|dein name|wie heißt/.test(q)) {
     say = "Ich bin Kushim. Ein Mensch aus Licht, kein Kittel und kein Menü.";
@@ -27,8 +27,7 @@ export function fallbackReply(
     say = "Das ist viel. Ich bleibe bei dem Satz, den du gerade gesagt hast.";
     gesture = "empathize";
   } else if (/\?/.test(user) && !isRepairRequest(user)) {
-    say =
-      "Ich würde dir das lieber mit meiner verbundenen Stimme beantworten. Bis dahin: sag mir, was du davon selbst schon glaubst.";
+    say = "Die Stimme ist nicht verbunden. Sag mir, was du davon selbst schon glaubst.";
     gesture = "think";
   }
   if (isRepairRequest(user)) gesture = "acknowledge";
