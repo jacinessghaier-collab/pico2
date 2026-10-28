@@ -1,5 +1,5 @@
 # KUSHIM-SPEZIFIKATION
-Stand: Stufe 9 abgeschlossen. Der erste Satz ist kürzer als der zweite, mit einer kurzen Pause. Satzmelodie bleibt ausgesetzt. Stufe 10 ist der vorhandene Lock-Check.
+Stand: Stufe 10 von 10 abgeschlossen. Der Scouting-Plan ist verworfen. Die Figur bleibt. Satzmelodie bleibt ausgesetzt. Eine elfte Stufe gibt es nicht.
 Gesperrte Bildausgabe bleibt `kushim-aussehen-masterprompt.md`. Silhouette, Farben, Signal, Kamera nicht neu erfinden.
 
 ## Körper

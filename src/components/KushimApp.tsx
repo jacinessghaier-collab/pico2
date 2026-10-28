@@ -286,8 +286,10 @@ export function KushimApp() {
             Stunde {hour} · {stage.label}
           </p>
           <p className="text-xs text-mist">
-            Stufe {DONE_STEP} von {STEPS.length} · Nächste:{" "}
-            {STEPS.find((item) => item.id === NEXT_STEP)?.title}
+            Stufe {DONE_STEP} von {STEPS.length}
+            {DONE_STEP < STEPS.length
+              ? ` · Nächste: ${STEPS.find((item) => item.id === NEXT_STEP)?.title ?? ""}`
+              : ""}
           </p>
         </div>
         <div className="pointer-events-auto flex items-center gap-2">
