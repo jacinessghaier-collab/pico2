@@ -6,7 +6,7 @@ Nur dieser Punkt. Die Figur, `lock.ts` und die kanonischen Zahlen bleiben liegen
 
 Stunden-Schritt 10. Vorgelegt war ein 10-Stufen-Plan mit drei Wegen: Browser-Space-Colonization, Blender-MPFB2 plus lokalem Sprachstack, Anny plus Audio2Face. Geprüft gegen das gesperrte Still und gegen `lock-check`, bevor eine Zeile der Figur angefasst wurde.
 
-Das Still ist die laufende Figur: erwachsener Mensch, acht Kopflängen, Cyan auf Schwarz, Filamente im Körper, ein Rot an der rechten Schulter, frontale Kamera, kein Boden. Der Plan beschreibt eine andere Optik: gelbgrünes Nervennetz, türkiser Rim, Bodenspiegel, Nebel, Orbit um 360°, Transmission-Buffer, fremdes Mesh. Diese Optik ist nicht die Referenz.
+00-ZIEL ist die Referenz: limetten- bis gelbgrüne Filamente innen, cyaner Fresnel-Rim außen, dezenter Bodenspiegel und Fußglühen, Dreiviertel für den Look bevorzugt, kein roter Schulterknoten. Der Plan bleibt verworfen: kein GLB, kein Anny, kein MPFB2, keine Orbit-Kamera, kein Bloom.
 
 Abkürzung, vollständig:
 
@@ -23,11 +23,11 @@ Nichts an Anatomie, Shader, Kamera oder Geste ist geändert. Kein zweiter Check,
 Geprüft. Alle fünf entfallen. Die Satzmelodie ist keiner davon.
 
 1. Kein Anny, kein MPFB2, kein GLB. Geometrie-Tausch wirft der Lock.
-2. Kein Boden, kein Nebel, kein Bloom, keine Orbit-Kamera.
-3. Keine neue Farbe neben Strom, Kern, Filament und dem einen Rot.
+2. Kein Bloom, keine Orbit-Kamera. Der dezente Bodenspiegel und das Fußglühen gehören zu 00-ZIEL.
+3. 00-ZIEL bleibt die Farbe: Limette bis Gelbgrün innen, Cyan-Fresnel außen, kein roter Schulterknoten.
 4. Kein zweiter Lippensync und keine zweite Uhr. `FIRST_PAUSE_MS` bleibt 320.
 5. Kein lokaler Sprachserver und kein Desktop-Pet. Eine elfte Stufe gibt es nicht.
 
 ## English
 
-The proposed ten-stage rebuild was checked against the locked figure and refused. Stages that are already the procedural rig were not rebuilt. Floor, fog, orbit camera, bloom, a replacement mesh, and a second lip-sync or voice stack would fail the appearance lock on the first frame. The figure is unchanged. The ten-stage pipeline is closed. Sentence melody stays deferred. The 320 ms pause stays.
+The proposed ten-stage rebuild was checked and refused. 00-ZIEL is lime/yellow-green filaments inside, a cyan Fresnel rim outside, a subtle floor reflection and foot glow, three-quarter preferred for the look, and no red shoulder knot. Anny, MPFB2, a GLB swap, an orbit camera, and bloom stay refused. Stages that are already the procedural rig were not rebuilt. The figure is unchanged. The ten-stage pipeline is closed. Sentence melody stays deferred. The 320 ms pause stays.

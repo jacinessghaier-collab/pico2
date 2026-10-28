@@ -1,8 +1,8 @@
 # Kushim — Stundenplan
 
-Das Aussehen ist fertig und gesperrt. Quelle: `kushim-aussehen-masterprompt.md` und `src/kushim/lock.ts`.
+Das Aussehen ist fertig und gesperrt. Look-Referenz ist 00-ZIEL.
 
-Nicht anfassen: Silhouette, acht-Kopf-Proportion, Farben Void `#02060A` / Strom `#3AD7FF` / Kern `#E7FBFF` / Signal `#FF3B4E`, eine rote Stelle nur an Kushims rechter Schulter (links im Bild), frontale Kamera, kein Boden, keine zweite Person.
+Nicht anfassen: Silhouette, acht-Kopf-Proportion, keine zweite Person. Look 00-ZIEL: limetten- bis gelbgrüne Filamente innen, cyaner Fresnel-Rim außen, dezenter Bodenspiegel und Fußglühen, Dreiviertel bevorzugt, kein roter Schulterknoten.
 
 Erlaubt, eine Sache pro Stunde: Gesten in `src/kushim/motion.ts`, Gespräch in `src/kushim/stages.ts` und im Systemtext von `src/kushim/server.ts`, Pausen und Sprechrate. Filamentdichte nur innerhalb 0.86–1.
 
@@ -10,7 +10,7 @@ Die laufende App schaltet dieselben Stufen schon über die Echtzeit seit dem ers
 
 ## Noch nicht gebaut
 
-- [x] Stabil: `lock.ts`-Werte unverändert und eingefroren. `src/kushim/lock-check.ts` wirft `LockBreach`, wenn Farbe, Silhouette, das eine rote Signal oder die frontale Kamera kippen. Wertevergleich: `src/kushim/lock.test.ts`. Laufzeit: `src/kushim/lock-check.test.ts`.
+- [x] Stabil: `lock.ts`-Werte unverändert und eingefroren. `src/kushim/lock-check.ts` wirft `LockBreach`, wenn die gesperrten Werte kippen. Wertevergleich: `src/kushim/lock.test.ts`. Laufzeit: `src/kushim/lock-check.test.ts`.
 
 ## Schon in der App
 
@@ -26,7 +26,7 @@ Lock erneut gelesen: dieselbe Prüfung in `src/kushim/lock-check.ts`. Ein Bruch 
 
 Stabilitätscheck um 09:00: dieselbe Prüfung, gelesen über die Trainingsstunden, Takt `LOCK_READ_SEC` (zwei Sekunden). Kein zweiter Check, kein Post-Pass, kein visueller Eingriff. Gemessen in `src/kushim/lock-check.test.ts`. `lock.ts` bleibt. Die Pause von 320 ms bleibt. Satzmelodie bleibt ausgesetzt.
 
-Scouting um 18:40: der vorgelegte 10-Stufen-Plan (Weg A, B und C) beschreibt eine andere Figur als das gesperrte Still. Referenz bleibt Cyan auf Schwarz, eine rote Schulter, kein Boden, kein Nebel, frontale Kamera, acht Kopflängen. Stufen 1 bis 6 des Plans liegen schon im prozeduralen Rig. Boden, Nebel, Orbit, Bloom, Transmission-Buffer, Anny, MPFB2, Audio2Face und ein GLB-Tausch fallen an `lock-check`. Nichts davon ist gebaut. Kein zweites Rig.
+Scouting um 18:40: der vorgelegte 10-Stufen-Plan (Weg A, B und C) bleibt verworfen. 00-ZIEL: limetten- bis gelbgrüne Filamente innen, cyaner Fresnel-Rim außen, dezenter Bodenspiegel und Fußglühen, Dreiviertel für den Look bevorzugt, kein roter Schulterknoten. Stufen 1 bis 6 des Plans liegen schon im prozeduralen Rig. Kein GLB, kein Anny, kein MPFB2, keine Orbit-Kamera, kein Bloom. Nichts davon ist gebaut. Kein zweites Rig.
 
 Bau: Stufe 10 von 10 erledigt. Die Stundenpipeline ist zu. Eine elfte Stufe gibt es nicht. Der letzte Visem endet mit dem Texttakt, gemessen in `src/kushim/speech.test.ts`. Satzmelodie bleibt ausgesetzt. Die Pause von 320 ms bleibt. Marker: `src/kushim/stand.ts`. Die Kopfzeile nennt keine nächste Stufe mehr.
 
@@ -35,8 +35,8 @@ Bau: Stufe 10 von 10 erledigt. Die Stundenpipeline ist zu. Eine elfte Stufe gibt
 Geprüft, bevor sie als Arbeit gelten. Alle fünf entfallen. Die Satzmelodie ist keiner dieser Schritte. Die Antwortform bleibt auf ihrer eigenen Spur.
 
 1. **Kein zweites Körpermodell.** Anny, MPFB2, SOMA-X, SMPL-X und ein gedroptes GLB ersetzen Geometrie. `auditBaseline` wirft das schon. Das laufende Rig bleibt.
-2. **Keine Bühne.** Boden, Reflektor, Nebel, Bloom, Umgebungskarte und eine transparente Clear-Farbe wirft `assertClearLock`. Orbit und FOV ungleich 26 wirft `assertFrontalCamera`. Der Void bleibt deckend schwarz.
-3. **Keine neue Farbe.** Strom, Kern, Filament und das eine Rot bleiben die Schlüssel in `lock.ts`. Ein türkiser Rim und ein gelbgrünes Nerven-Retarget sind eine andere Palette.
+2. **Kein Orbit, kein Bloom.** Orbit-Kamera und Bloom bleiben verworfen. Der dezente Bodenspiegel und das Fußglühen sind 00-ZIEL. Kein neuer Bau.
+3. **Look bleibt 00-ZIEL.** Limetten- bis gelbgrüne Filamente innen, cyaner Fresnel-Rim außen, kein roter Schulterknoten. Dreiviertel ist für den Look bevorzugt.
 4. **Kein zweiter Mund.** wLipSync, HeadAudio und Audio2Face brauchen Blendshapes oder CUDA. Dieser Mund ist der vorhandene Visem-Pfad. Keine zweite Uhr. `FIRST_PAUSE_MS` bleibt 320.
 5. **Keine lokale Brücke.** SenseVoice, Qwen3-TTS und ein Electron-Pet laufen nicht in dieser Laufzeit. Stimme bleibt Leo, sonst der Browser. Ein Socket nach `127.0.0.1` wäre ein zweiter Pfad.
 

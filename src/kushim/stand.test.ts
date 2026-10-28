@@ -38,7 +38,13 @@ describe("stability hour markers", () => {
     assert.match(skip.body, /Weg A/);
     assert.match(skip.body, /Weg B/);
     assert.match(skip.body, /Weg C/);
-    assert.match(skip.body, /Boden, Nebel/);
+    assert.match(skip.body, /limetten- bis gelbgrüne Filamente innen/);
+    assert.match(skip.body, /cyaner Fresnel-Rim außen/);
+    assert.match(skip.body, /kein roter Schulterknoten/);
+    assert.match(skip.body, /kein Bloom/);
+    assert.match(skip.body, /kein Anny/);
+    assert.match(skip.body, /kein MPFB2/);
+    assert.match(skip.body, /Kein GLB/);
     assert.match(skip.body, /lock.ts bleibt/);
     assert.match(skip.body, /Kein zweites Rig/);
     assert.match(skip.body, /FIRST_PAUSE_MS bleibt 320/);

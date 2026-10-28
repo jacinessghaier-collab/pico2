@@ -78,7 +78,7 @@ export const CHANGES: Change[] = [
     time: "27.10.",
     step: 1,
     title: "Silhouette gesperrt",
-    body: "Proportionen, Farben und die eine rote Schulter liegen in lock.ts. Die laufende Figur ist das prozedurale Rig, kein VRM.",
+    body: "Proportionen und Farben liegen in lock.ts. Die laufende Figur ist das prozedurale Rig, kein VRM.",
     source: "pico2",
   },
   {
@@ -182,7 +182,7 @@ export const CHANGES: Change[] = [
     time: "18:40",
     step: 10,
     title: "Scouting verworfen",
-    body: "Der 10-Stufen-Plan (Weg A Anny und Space Colonization, Weg B MPFB2 und Qwen, Weg C Audio2Face) ersetzt die gesperrte Figur. Stufen 1 bis 6 liegen schon im prozeduralen Rig. Boden, Nebel, Orbit-Kamera, Bloom, Transmission-Buffer und ein GLB-Tausch wirft lock-check. Kein zweites Rig, kein zweiter Check. lock.ts bleibt. FIRST_PAUSE_MS bleibt 320. Satzmelodie bleibt ausgesetzt. Eine elfte Stufe gibt es nicht.",
+    body: "Der 10-Stufen-Plan (Weg A Anny und Space Colonization, Weg B MPFB2 und Qwen, Weg C Audio2Face) bleibt verworfen. 00-ZIEL: limetten- bis gelbgrüne Filamente innen, cyaner Fresnel-Rim außen, dezenter Bodenspiegel und Fußglühen, Dreiviertel für den Look bevorzugt, kein roter Schulterknoten. Stufen 1 bis 6 liegen schon im prozeduralen Rig. Kein GLB, kein Anny, kein MPFB2, keine Orbit-Kamera, kein Bloom. Kein zweites Rig, kein zweiter Check. lock.ts bleibt. FIRST_PAUSE_MS bleibt 320. Satzmelodie bleibt ausgesetzt. Eine elfte Stufe gibt es nicht.",
     source: "Stundenplan",
   },
 ];
