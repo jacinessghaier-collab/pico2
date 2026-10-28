@@ -387,8 +387,8 @@ function hugCenter(chestLocalY: number, radius: number) {
 }
 
 /**
- * Filament axis in chest space. The glass shell is `upperGlass`.
- * This center stays put so the nerve paths from #27 do not move.
+ * Chest-space center the upper-arm glass is fitted from.
+ * Nerve paths read `upperGlass`, which pulls this center inside the shoulder line.
  */
 function upperCenter(t: number) {
   const u = Math.min(1, Math.max(0, t));
@@ -397,7 +397,7 @@ function upperCenter(t: number) {
   const y = LOCK.proportions.shoulderLocalY + tubeY;
   const hugged = hugCenter(y, r);
   const shoulderHalf = shellRadius(LOCK.proportions.shoulderLocalY) * SHELL_SX;
-  // The old shell sat 0.034 outside the shoulder. Filaments still follow it.
+  // Legacy outer line. `upperGlass` pulls the tube off it; nerves follow that fit.
   const line = shoulderHalf + 0.034;
   const free = line - r;
   const hold = 1 - hermite(0.12, 0.4, u);
@@ -833,8 +833,8 @@ const FORE_RADII = [0.034, 0.036, 0.044, 0.046, 0.04, 0.03, 0.022];
 /** Quad belly, then the knee radius so the bridge stays the same tube. */
 const THIGH_RADII = [0.096, 0.104, 0.106, 0.088, 0.066, 0.048, 0.042, 0.042, 0.042];
 /**
- * Knee, then the bone radius the filaments still follow.
- * The glass frontal width and the two heads live in shinSection.
+ * Knee, then the bone radius `shinSection` builds on.
+ * Calf filaments follow that section (two heads and the groove), not this spindle.
  */
 const SHIN_RADII = [0.042, 0.044, 0.05, 0.062, 0.074, 0.074, 0.05, 0.034, 0.026];
 const LIMB = {
@@ -1401,14 +1401,22 @@ function fillTorso(ribbon: Ribbon) {
   }
 }
 
-function upperAxis(side: 1 | -1) {
+function upperGlassT(u: number) {
   const prox = BLEND.shoulder;
   const length = LOCK.proportions.upperArm;
+  return Math.min(1, Math.max(0, (prox + u * length) / (prox + length)));
+}
+
+/** Shoulder-local center of the post-fit upper-arm tube. */
+function upperAxis(side: 1 | -1) {
   const pin = LOCK.proportions.shoulderX;
-  return (u: number) => {
-    const t = (prox + u * length) / (prox + length);
-    return side * (upperCenter(Math.min(1, Math.max(0, t))).center - pin);
-  };
+  return (u: number) => side * (upperGlass(upperGlassT(u)).center - pin);
+}
+
+/** Inset of the round upper-arm tube. Keeps lime off the glass rim. */
+function upperFilamentBounds(u: number) {
+  const rad = upperGlass(upperGlassT(u)).r * 0.72;
+  return { rx: rad, rz: rad };
 }
 
 function fillLimb(
@@ -1421,14 +1429,15 @@ function fillLimb(
   seed: number,
   side: number,
   axisX?: (u: number) => number,
+  bounds?: (u: number) => { rx: number; rz: number },
 ) {
   // Thin trunks and short twigs inside the current tube. Not full-length lanes.
   let n = Math.round(seed * 19 + length * 80 + radii.length);
   const h = () => unitHash(n++);
   const flat = 0.8;
   const axis = axisX ?? (() => 0);
-  const reachX = (u: number) => radiusAt(radii, u) * 0.76;
-  const reachZ = (u: number) => radiusAt(radii, u) * flat * 0.76;
+  const reachX = (u: number) => bounds?.(u).rx ?? radiusAt(radii, u) * 0.76;
+  const reachZ = (u: number) => bounds?.(u).rz ?? radiusAt(radii, u) * flat * 0.76;
   const clamp = (v: number, reach: number) => Math.max(-reach, Math.min(reach, v));
   const mean = radii.reduce((sum, r) => sum + r, 0) / Math.max(1, radii.length);
   const laneCount = mean > 0.055 ? 3 : 2;
@@ -1525,6 +1534,188 @@ function fillLimb(
         0.65,
       );
     }
+  }
+}
+
+type CalfLane = "lat" | "med" | "groove";
+
+/**
+ * Radius the calf tube actually meshes. The knee blend holds the first sample,
+ * same as `organicTube` with `join: "child"`. Filaments have to follow that,
+ * not the unblended bone radius.
+ */
+function shinTubeRadius(t: number) {
+  const length = LOCK.proportions.shin;
+  const prox = BLEND.knee;
+  const y = prox * (1 - t) - length * t;
+  let r = radiusAt(SHIN_RADII, t);
+  if (y > -prox) {
+    const held = SHIN_RADII[0] ?? r;
+    const u = hermite(0, -prox, y);
+    r = held + (r - held) * u;
+  }
+  return r;
+}
+
+/**
+ * Cross-section of the calf glass, read from `shinSection`.
+ * Lateral head, medial head, and the posterior groove, each inset off the rim.
+ */
+function calfFrame(t: number, side: 1 | -1) {
+  const r = shinTubeRadius(t);
+  const samples = 72;
+  const pts: Array<{ x: number; z: number }> = [];
+  for (let i = 0; i < samples; i++) {
+    pts.push(shinSection(t, (i / samples) * Math.PI * 2, r, side));
+  }
+  let cx = 0;
+  let cz = 0;
+  for (const p of pts) {
+    cx += p.x;
+    cz += p.z;
+  }
+  cx /= samples;
+  cz /= samples;
+
+  const contain = (x: number, z: number, inset = 0.84) => {
+    const dx = x - cx;
+    const dz = z - cz;
+    const rad = Math.hypot(dx, dz);
+    if (rad < 1e-5) return { x: cx, z: cz };
+    const ang = Math.atan2(dz, dx);
+    const c = Math.cos(ang);
+    const s = Math.sin(ang);
+    let ray = 1e-4;
+    for (const q of pts) {
+      const dot = (q.x - cx) * c + (q.z - cz) * s;
+      if (dot > ray) ray = dot;
+    }
+    const limit = ray * inset;
+    if (rad <= limit) return { x, z };
+    const k = limit / rad;
+    return { x: cx + dx * k, z: cz + dz * k };
+  };
+
+  let lat = { x: cx + side * r * 0.25, z: cz - r * 0.35 };
+  let med = { x: cx - side * r * 0.22, z: cz - r * 0.4 };
+  let groove = { x: cx, z: cz - r * 0.18 };
+  let latZ = Infinity;
+  let medZ = Infinity;
+  let grooveZ = -Infinity;
+  let grooveFound = false;
+  for (const p of pts) {
+    if (p.z > cz) continue;
+    const outward = side * (p.x - cx);
+    if (outward > 0.008 && p.z < latZ) {
+      latZ = p.z;
+      lat = p;
+    }
+    if (outward < -0.008 && p.z < medZ) {
+      medZ = p.z;
+      med = p;
+    }
+    if (Math.abs(p.x - cx) <= 0.014 && p.z > grooveZ) {
+      grooveZ = p.z;
+      groove = p;
+      grooveFound = true;
+    }
+  }
+  if (!grooveFound) groove = { x: cx, z: cz - r * 0.16 };
+
+  return {
+    cx,
+    cz,
+    lat: contain(lat.x, lat.z, 0.74),
+    med: contain(med.x, med.z, 0.82),
+    groove: contain(groove.x, groove.z, 0.68),
+    contain,
+  };
+}
+
+/**
+ * Fine calf nerves on both gastrocnemius heads and in the groove.
+ * The lateral bundle is higher, the medial bundle lower and a little fuller.
+ * Chords stay inside the section so they do not bridge across the valley.
+ */
+function fillCalf(ribbon: Ribbon, side: 1 | -1) {
+  const length = LOCK.proportions.shin;
+  const prox = BLEND.knee;
+  let seed = 900 + side * 13;
+  const h = () => unitHash(seed++);
+  const frameAt = (u: number) => {
+    const t = Math.min(1, Math.max(0, (prox + u * length) / (prox + length)));
+    return calfFrame(t, side);
+  };
+  const laneOf = (frame: ReturnType<typeof calfFrame>, lane: CalfLane) => frame[lane];
+
+  const trunks: Array<{ lane: CalfLane; n: number; gain: number }> = [
+    { lane: "lat", n: 2, gain: 0.58 },
+    { lane: "med", n: 2, gain: 0.68 },
+    { lane: "groove", n: 1, gain: 0.48 },
+  ];
+  for (const trunk of trunks) {
+    for (let i = 0; i < trunk.n; i++) {
+      const spread = (i - (trunk.n - 1) / 2) * 0.009;
+      const phase = h() * Math.PI * 2;
+      pushCurve(
+        ribbon,
+        16,
+        (u) => {
+          const uu = 0.07 + u * 0.88;
+          const frame = frameAt(uu);
+          const src = laneOf(frame, trunk.lane);
+          const wobX = Math.sin(uu * Math.PI * 1.35 + phase) * 0.0035;
+          const wobZ = Math.sin(uu * Math.PI + phase * 1.2) * 0.0025;
+          const p = frame.contain(src.x + side * spread + wobX, src.z + wobZ);
+          return new THREE.Vector3(p.x, -uu * length, p.z);
+        },
+        0.07,
+        0.000085,
+        0.4 * trunk.gain,
+        0.28,
+        0.18,
+      );
+    }
+  }
+
+  const twigs = 88;
+  for (let i = 0; i < twigs; i++) {
+    const roll = h();
+    const lane: CalfLane = roll < 0.34 ? "lat" : roll < 0.8 ? "med" : "groove";
+    const band =
+      lane === "lat" ? 0.19 + (h() - 0.55) * 0.28 : lane === "med" ? 0.45 + (h() - 0.45) * 0.32 : 0.14 + h() * 0.7;
+    const u0 = Math.min(0.9, Math.max(0.08, band));
+    const along = h() < 0.64;
+    const u1 = Math.min(0.96, u0 + (along ? 0.07 + h() * 0.1 : 0.025 + h() * 0.05));
+    const startFrame = frameAt(u0);
+    const startSrc = laneOf(startFrame, lane);
+    const start = startFrame.contain(
+      startSrc.x + (h() - 0.5) * 0.01,
+      startSrc.z + (h() - 0.5) * 0.007,
+    );
+    const endFrame = frameAt(u1);
+    const targetLane: CalfLane = along ? lane : lane === "groove" ? (h() < 0.5 ? "lat" : "med") : "groove";
+    const target = laneOf(endFrame, targetLane);
+    const mix = along ? 0.22 + h() * 0.3 : 0.4 + h() * 0.35;
+    const tip = endFrame.contain(
+      start.x + (target.x - start.x) * mix + (h() - 0.5) * 0.006,
+      start.z + (target.z - start.z) * mix,
+    );
+    pushCurve(
+      ribbon,
+      3,
+      (u) => {
+        const uu = u0 + (u1 - u0) * u;
+        const frame = frameAt(uu);
+        const p = frame.contain(start.x + (tip.x - start.x) * u, start.z + (tip.z - start.z) * u);
+        return new THREE.Vector3(p.x, -uu * length, p.z);
+      },
+      0.09 + (i % 4) * 0.012,
+      0.000075,
+      0.4 * (lane === "med" ? 0.46 : 0.38),
+      0.18,
+      0.45,
+    );
   }
 }
 
@@ -1870,7 +2061,18 @@ export function createKushim(): Rig {
       glass,
     );
     const upperN = emptyRibbon();
-    fillLimb(upperN, P.upperArm, UPPER_RADII, 0.05, 0.00011, 0.5, side * 1.3, side, upperAxis(side));
+    fillLimb(
+      upperN,
+      P.upperArm,
+      UPPER_RADII,
+      0.05,
+      0.00011,
+      0.5,
+      side * 1.3,
+      side,
+      upperAxis(side),
+      upperFilamentBounds,
+    );
     commitRibbon(shoulder, upperN, nerve);
 
     const elbow = new THREE.Group();
@@ -2015,7 +2217,7 @@ export function createKushim(): Rig {
       glass,
     );
     const shinN = emptyRibbon();
-    fillLimb(shinN, P.shin, SHIN_RADII, 0.07, 0.000085, 0.4, 3.1 + side, side);
+    fillCalf(shinN, side);
     commitRibbon(knee, shinN, nerve);
 
     const ankle = new THREE.Group();
