@@ -137,12 +137,20 @@ export const CHANGES: Change[] = [
     body: "Die laufende Szene misst die Frame-Zeit. Ein Schalter zeigt Mittel, Bilder pro Sekunde und Spitze. Aus ist der Normalzustand. Kein neues Material. Die Pause bleibt 320 ms. Satzmelodie bleibt ausgesetzt.",
     source: "Stundenplan",
   },
+  {
+    id: "mouth-rest",
+    time: "08:00",
+    step: null,
+    title: "Mund in der Ruhe",
+    body: "Liegt der Sprechbus still, ist die Lippe zu und der Kiefer auf der Ruhe. Die Satzpause hält den Bus still, auch länger als die erste Pause, und die Pose darf dabei noch sprechen. Gemessen, ohne die Form nachzuziehen. FIRST_PAUSE_MS, Bildzeit und lock.ts bleiben.",
+    source: "Stundenplan",
+  },
 ];
 
 export const DONE_STEP = 9;
 export const NEXT_STEP = 10;
-export const NEXT_RUN_LABEL = "08:00";
+export const NEXT_RUN_LABEL = "09:00";
 
-/** Hourly pipeline. Step 7 is frame time. The 320 ms pause stayed. Melody stays deferred. */
-export const HOURLY_DONE = 7;
-export const HOURLY_NEXT = 8;
+/** Hourly pipeline. Step 8 idle mouth is in. Frame time and the 320 ms pause stayed. Melody stays deferred. */
+export const HOURLY_DONE = 8;
+export const HOURLY_NEXT = 9;

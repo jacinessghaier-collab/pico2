@@ -17,3 +17,4 @@
 - Pico step 9: the first spoken sentence is shorter than the second, then one short pause (browser wait, Leo `[pause]`). Sentence melody stays deferred. Stand DONE 9 / NEXT 10. [2026-10-28]
 - Mouth opening follows the existing chest breath: level sets the viseme, the inhale eases it by 6%, and the opening delta is divided by the chest scale. The separate aa sine is gone. Chest rate and lock.ts are unchanged. Hourly DONE 6 / NEXT 7. Melody stays deferred. [2026-10-28]
 - Frame time: the live scene records the raw useFrame delta. A Bildzeit toggle shows the 60-frame mean, fps, and peak. Off by default. No bloom, aura, or material. FIRST_PAUSE_MS stays 320. Hourly DONE 7 / NEXT 8. Melody stays deferred. [2026-10-28]
+- Idle speech bus keeps the mouth at rest (lip scale 1, jaw at rest) through the sentence gap, including while the speak pose is still set. Measured; no shape change. Hourly DONE 8 / NEXT 9. Melody stays deferred. [2026-10-28]
