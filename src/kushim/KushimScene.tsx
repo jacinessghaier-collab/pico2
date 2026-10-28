@@ -1,10 +1,11 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import * as THREE from "three";
 import { createKushim } from "@/kushim/anatomy";
 import { setGaze } from "@/kushim/lipsync";
 import { LOCK } from "@/kushim/lock";
+import { assertClearLock, assertFrontalCamera, assertRigLock } from "@/kushim/lock-check";
 import { tickKushim, type Pose } from "@/kushim/motion";
 
 function Framing() {
@@ -26,10 +27,19 @@ function Framing() {
   return null;
 }
 
-function Avatar({ poseRef }: { poseRef: RefObject<Pose> }) {
+function Avatar({
+  poseRef,
+  onBreach,
+}: {
+  poseRef: RefObject<Pose>;
+  onBreach: (message: string) => void;
+}) {
   const rig = useMemo(() => createKushim(), []);
-  const { scene, pointer } = useThree();
+  const { scene, pointer, camera, gl } = useThree();
   const elapsed = useRef(0);
+  const lockAcc = useRef(0);
+  const lockSeen = useRef(false);
+  const reported = useRef(false);
 
   useEffect(() => {
     scene.add(rig.root);
@@ -44,14 +54,28 @@ function Avatar({ poseRef }: { poseRef: RefObject<Pose> }) {
     elapsed.current += dt;
     setGaze(pointer.x, pointer.y);
     const pose = poseRef.current;
-    if (!pose) return;
-    tickKushim(rig, pose, dt, elapsed.current);
+    if (pose) tickKushim(rig, pose, dt, elapsed.current);
+    if (reported.current) return;
+    lockAcc.current += dt;
+    if (lockSeen.current && lockAcc.current < 2) return;
+    lockSeen.current = true;
+    lockAcc.current = 0;
+    try {
+      assertRigLock(rig, "live");
+      assertFrontalCamera(camera);
+      assertClearLock(gl);
+    } catch (error) {
+      reported.current = true;
+      onBreach(error instanceof Error ? error.message : String(error));
+    }
   });
 
   return null;
 }
 
 export function KushimScene({ poseRef }: { poseRef: RefObject<Pose> }) {
+  const [breach, setBreach] = useState<string | null>(null);
+  if (breach) throw new Error(breach);
   return (
     <Canvas
       className="h-full w-full"
@@ -61,10 +85,11 @@ export function KushimScene({ poseRef }: { poseRef: RefObject<Pose> }) {
       onCreated={({ gl }) => {
         gl.setClearColor(LOCK.void, 1);
         gl.toneMapping = THREE.NoToneMapping;
+        assertClearLock(gl);
       }}
     >
       <Framing />
-      <Avatar poseRef={poseRef} />
+      <Avatar poseRef={poseRef} onBreach={setBreach} />
     </Canvas>
   );
 }

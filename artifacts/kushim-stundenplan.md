@@ -10,7 +10,7 @@ Die laufende App schaltet dieselben Stufen schon über die Echtzeit seit dem ers
 
 ## Noch nicht gebaut
 
-- [ ] Stabil: keine weiteren Codeänderungen, nur prüfen dass `lock.ts` unverändert ist. Der Vergleich liegt in `src/kushim/lock.test.ts`. Farben, Proportionen und Gestennamen sind in diesem Lauf gleich geblieben.
+- [x] Stabil: `lock.ts`-Werte unverändert und eingefroren. `src/kushim/lock-check.ts` wirft `LockBreach`, wenn Farbe, Silhouette, das eine rote Signal oder die frontale Kamera kippen. Wertevergleich: `src/kushim/lock.test.ts`. Laufzeit: `src/kushim/lock-check.test.ts`.
 
 ## Schon in der App
 
