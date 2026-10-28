@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   FRAME_WINDOW,
+  LOCK_CADENCE_S,
   createFrameClock,
   formatFrameClock,
+  lockReadDue,
   noteLiveFrame,
   readLiveFrame,
   resetLiveFrame,
@@ -98,5 +103,70 @@ describe("frame time", () => {
     resetLiveFrame();
     assert.equal(readLiveFrame().frames, 0);
     assert.equal(formatFrameClock(readLiveFrame()), "Bildzeit …");
+  });
+
+  it("keeps the lock read in the frame when the peak sits on the mean", () => {
+    assert.equal(LOCK_CADENCE_S, 2);
+    assert.ok(LOCK_CADENCE_S <= 2);
+
+    const clock = createFrameClock();
+    const frames = Math.round(LOCK_CADENCE_S * 60);
+    for (let i = 0; i < frames; i++) clock.note(1 / 60);
+    const sample = snapshot(clock.read());
+    assert.equal(sample.frames, frames);
+    assert.ok(sample.meanMs > 0);
+    assert.ok(Math.abs(sample.peakMs - sample.meanMs) / sample.meanMs < 1e-9);
+    assert.ok(Math.abs(sample.fps - 60) < 1e-6);
+
+    assert.equal(lockReadDue(0, false), true);
+    assert.equal(lockReadDue(1 / 60, false), true);
+    assert.equal(lockReadDue(LOCK_CADENCE_S - 1e-9, true), false);
+    assert.equal(lockReadDue(LOCK_CADENCE_S, true), true);
+
+    let seen = false;
+    let accMs = 0;
+    let runs = 0;
+    for (let ms = 16; ms <= 5000; ms += 16) {
+      accMs += 16;
+      if (!lockReadDue(accMs / 1000, seen)) continue;
+      runs += 1;
+      seen = true;
+      accMs = 0;
+    }
+    assert.equal(runs, 3);
+
+    const scene = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "KushimScene.tsx"), "utf8");
+    assert.match(scene, /lockReadDue\(lockAcc\.current, lockSeen\.current\)/);
+    assert.match(scene, /dpr=\{\[1, 1\.6\]\}/);
+    assert.equal(scene.includes("setPixelRatio"), false);
+    assert.equal(/Bloom|EffectComposer/.test(scene), false);
+  });
+});
+
+function listSources(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...listSources(full));
+    else if (/\.tsx?$/.test(entry.name) && !entry.name.endsWith(".test.ts")) out.push(full);
+  }
+  return out;
+}
+
+describe("no bloom and no pixel-ratio write", () => {
+  it("leaves the live sources without a post pass", () => {
+    const src = join(dirname(fileURLToPath(import.meta.url)), "..");
+    const files = listSources(src);
+    assert.ok(files.length > 0);
+    for (const file of files) {
+      const text = readFileSync(file, "utf8");
+      assert.equal(
+        /EffectComposer|UnrealBloom|setPixelRatio|@react-three\/postprocessing|from ["']postprocessing["']/.test(
+          text,
+        ),
+        false,
+        file,
+      );
+    }
   });
 });

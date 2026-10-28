@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { afterEach, before, describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import { createKushim } from "@/kushim/anatomy";
 import { FIRST_PAUSE_MS, gapAfterSentence } from "@/kushim/dialogue";
 import type { MouthBreath } from "@/kushim/lipsync";
 import { tickKushim, type Pose } from "@/kushim/motion";
 import { sampleSpeechMouth, speakBrowser, stopSpeech } from "@/kushim/speech";
+import { STAGES } from "@/kushim/stages";
 
 type FakeUtterance = {
   text: string;
@@ -202,6 +206,51 @@ describe("idle speech bus", () => {
       clock.restore();
       rig.dispose();
     }
+  });
+});
+
+describe("one stage rate", () => {
+  it("speaks each stage at stage.speechRate and keeps a flat pitch", () => {
+    assert.equal(FIRST_PAUSE_MS, 320);
+    for (const stage of STAGES) {
+      utterances.length = 0;
+      queued.length = 0;
+      const pending = speakBrowser("Ich bin da.", stage.speechRate, stage.sentenceGapMs, "de-DE");
+      pending.catch(() => {});
+      assert.equal(utterances.length, 1, stage.label);
+      assert.equal(utterances[0]?.rate, stage.speechRate);
+      assert.equal(utterances[0]?.pitch, 0.92);
+      assert.equal("pitch" in stage, false);
+      assert.equal(Object.keys(stage).filter((key) => key.toLowerCase().includes("rate")).join(), "speechRate");
+      assert.ok(stage.speechRate > 0 && stage.speechRate <= 1);
+      stopSpeech();
+    }
+  });
+
+  it("gives the browser the stage rate and no second clock", () => {
+    const root = dirname(fileURLToPath(import.meta.url));
+    const app = readFileSync(join(root, "../components/KushimApp.tsx"), "utf8");
+    const speech = readFileSync(join(root, "speech.ts"), "utf8");
+    const stages = readFileSync(join(root, "stages.ts"), "utf8");
+    const calls = app
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.includes("speakBrowser("));
+    assert.deepEqual(calls, [
+      "else await speakBrowser(text, stage.speechRate, stage.sentenceGapMs, langOf(text));",
+      "await speakBrowser(text, stage.speechRate, stage.sentenceGapMs, langOf(text));",
+    ]);
+    assert.equal(app.includes("speakLeo(audio.audio, audio.mime, text)"), true);
+    assert.equal(speech.includes("utterance.rate = rate;"), true);
+    assert.equal(speech.includes("utterance.pitch = 0.92;"), true);
+    assert.equal(speech.match(/utterance\.pitch/g)?.length, 1);
+    assert.equal(speech.includes("estimateSpeechMs(text, rate)"), true);
+    assert.equal(speech.includes("estimateSpeechMs(visemeText, 1)"), true);
+    assert.equal(
+      speech.includes("export async function speakLeo(audioBase64: string, mime: string, text: string)"),
+      true,
+    );
+    assert.equal(/\bpitch\b/.test(stages), false);
   });
 });
 

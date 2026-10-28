@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import * as THREE from "three";
 import { createKushim } from "@/kushim/anatomy";
-import { noteLiveFrame, resetLiveFrame } from "@/kushim/frame-time";
+import { lockReadDue, noteLiveFrame, resetLiveFrame } from "@/kushim/frame-time";
 import { setGaze } from "@/kushim/lipsync";
 import { LOCK } from "@/kushim/lock";
 import { assertClearLock, assertFrontalCamera, assertRigLock } from "@/kushim/lock-check";
@@ -61,7 +61,7 @@ function Avatar({
     if (pose) tickKushim(rig, pose, dt, elapsed.current);
     if (reported.current) return;
     lockAcc.current += dt;
-    if (lockSeen.current && lockAcc.current < 2) return;
+    if (!lockReadDue(lockAcc.current, lockSeen.current)) return;
     lockSeen.current = true;
     lockAcc.current = 0;
     try {

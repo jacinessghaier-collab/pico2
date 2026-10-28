@@ -161,6 +161,14 @@ export const CHANGES: Change[] = [
     body: "Ohne vorherige Zeile streicht die Reparatur die Entschuldigung und kürzt, ohne Ersatzsatz. Der Name gilt nur als ganzes Wort: Jacin bleibt in Jacinta stehen. Offen bleiben drei: Namen nicht erfragen, Abbruch an der Historie, die nächste Regel in derselben Funktion.",
     source: "Stundenplan",
   },
+  {
+    id: "peak-rate-density",
+    time: "10:40",
+    step: null,
+    title: "Spitze, Rate, Dichte",
+    body: "Die Spitze liegt auf dem Mittel, die Lock-Prüfung bleibt im Frame und höchstens alle zwei Sekunden. Die Sprechrate bleibt die Stufe, FIRST_PAUSE_MS bleibt 320, die Tonhöhe bleibt fest. Die Dichte bleibt stage.filament in 0.86–1. Kein DPR, kein Bloom, keine Melodie. Der letzte Visem über den Texttakt bleibt offen.",
+    source: "Stundenplan",
+  },
 ];
 
 export const DONE_STEP = 9;

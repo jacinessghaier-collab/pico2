@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { before, describe, it } from "node:test";
 import * as THREE from "three";
 import { createKushim } from "@/kushim/anatomy";
@@ -12,6 +13,7 @@ import {
 } from "@/kushim/lock-check";
 import { breathCueAt, mouthTransform, type VisemeWeights } from "@/kushim/lipsync";
 import { applySpeechMouth, tickKushim, type Pose } from "@/kushim/motion";
+import { STAGES } from "@/kushim/stages";
 
 before(() => {
   if (typeof document !== "undefined") return;
@@ -172,6 +174,27 @@ describe("figure lock", () => {
     } finally {
       rig.dispose();
     }
+  });
+
+  it("writes the stage filament and keeps every stage inside 0.86–1", () => {
+    const rig = createKushim();
+    try {
+      for (const stage of STAGES) {
+        assert.ok(stage.filament >= LOCK_CANON.filamentMin, stage.label);
+        assert.ok(stage.filament <= LOCK_CANON.filamentMax, stage.label);
+        assert.equal("density" in stage, false);
+        tickKushim(rig, pose({ hour: stage.hour }), 0.016, 1);
+        assert.equal(rig.nerve.uniforms.uDensity.value, stage.filament);
+        assert.equal(rig.signal.uniforms.uDensity.value, 1);
+      }
+    } finally {
+      rig.dispose();
+    }
+    const motion = readFileSync(new URL("./motion.ts", import.meta.url), "utf8");
+    assert.deepEqual(motion.match(/uDensity\.value = [^;]+/g), [
+      "uDensity.value = stage.filament",
+      "uDensity.value = 1",
+    ]);
   });
 
   it("fails when the signal, silhouette, or filament leaves the lock", () => {

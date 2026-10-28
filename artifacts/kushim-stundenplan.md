@@ -20,7 +20,7 @@ Name höchstens einmal und nie erzwungen. Unterbrechung bricht den gesprochenen 
 
 Der erste Satz ist kürzer als der zweite. Danach eine kurze Pause: im Browser `FIRST_PAUSE_MS` (320), bei Leo einmal `[pause]`. Der Chat zeigt die Pause nicht. Die eine Pause bleibt, solange nichts sie als falsch ausweist. Die Mundöffnung folgt dem vorhandenen Atem: Lautstärke setzt die Stärke, das Einatmen nimmt sechs Prozent weg, die Öffnung wird durch die Brustskala geteilt. Brusttempo und Brustkorb bleiben. Liegt der Sprechbus still, ruht der Mund: Lippe auf Skala 1, Kiefer auf der Ruhe, auch in der Satzpause und während die Pose noch spricht. Kein Flattern. Satzmelodie bleibt ausgesetzt.
 
-Bildzeit: `src/kushim/frame-time.ts` misst das rohe Frame-Delta der laufenden Szene, vor der 50-ms-Klemme der Bewegung. Ein Schalter „Bildzeit“ unter der Kopfzeile zeigt Mittel, Bilder pro Sekunde und Spitze über 60 Frames. Aus ist der Normalzustand. Die Zeile liegt im DOM, nicht in der Szene. Kein Bloom, keine zweite Aura, kein neues Material.
+Bildzeit: `src/kushim/frame-time.ts` misst das rohe Frame-Delta der laufenden Szene, vor der 50-ms-Klemme der Bewegung. Ein Schalter „Bildzeit“ unter der Kopfzeile zeigt Mittel, Bilder pro Sekunde und Spitze über 60 Frames. Aus ist der Normalzustand. Die Zeile liegt im DOM, nicht in der Szene. Kein Bloom, keine zweite Aura, kein neues Material. Über einen gleichmäßigen Takt liegt die Spitze auf dem Mittel. Die Lock-Prüfung bleibt deshalb im Frame.
 
 Lock erneut gelesen: dieselbe Prüfung in `src/kushim/lock-check.ts`. Ein Bruch wirft weiter `LockBreach`, deutsch und englisch. Zusätzlich fallen ein ausgetauschter Shader oder eine andere Geometrie, ein umgehängtes oder ausgeblendetes Teil, eine seitliche oder kopfüber stehende Kamera, ein verschobener Szenenursprung, ein anderer Farbraum und ein Raum mit Hintergrund, Nebel, Ersatzmaterial, Umgebungskarte oder einem zweiten Objekt. `lock.ts` und die Figur sind unverändert. Der Takt bleibt zwei Sekunden.
 
@@ -30,11 +30,13 @@ Bau: Stufe 9 von 10 erledigt (kürzerer erster Satz). Nächste Stufe ist der Sta
 
 Geprüft. Abkürzungen stehen dabei. Die Satzmelodie ist keiner dieser Schritte.
 
+Erledigt: 1, 3 und 4. Punkt 2 gemessen übersprungen. Offen bleibt 5.
+
 1. **Antwort nur durch `shapeReply`.** Erledigt: ein Aufruf in der Oberfläche, Rohtext aus Server und Ersatz, die Formregeln sind aus dem Systemtext. Keine weitere Form, kein zweiter Block im Systemtext. Die nächsten fünf Schritte dieser Zeile stehen unter „Antwortform“.
-2. **Spitze nur lesen.** Die Lock-Prüfung läuft schon höchstens alle zwei Sekunden. Liegt die Spitze neben dem Mittel, entfällt der Eingriff. Kein DPR, kein Material, kein Bloom. Ein Ausreißer auf diesem Takt wäre der einzige Anlass, die Prüfung aus dem Frame zu nehmen.
-3. **Sprechrate bleibt die Stufe.** `stage.speechRate` ist die eine Rate. Keine zweite Uhr, keine Tonhöhe. `FIRST_PAUSE_MS` bleibt 320, solange niemand die eine Pause als falsch hört.
-4. **Dichte bleibt die Stufe.** `stage.filament` ist die eine Dichte. Der Check kennt schon 0.86–1. Keine zweite Dichte und kein Bloom.
-5. **Letzten Visem nicht über den Texttakt halten.** Wenn `onend` später kommt als `durationMs`, bleibt sonst die letzte Form stehen. Nur nachziehen, wenn das gemessen offen ist: ein Vergleich in `sampleSpeechMouth`, dieselbe Ruhe, kein Ausblenden. Die Schätzung kann kürzer sein als die Stimme. Keine Melodie.
+2. **Spitze nur lesen.** Übersprungen, gemessen. Über zwei Sekunden gleichmäßiger Frames liegt die Spitze auf dem Mittel. Die Prüfung bleibt im Frame. Der Takt heißt `LOCK_CADENCE_S` und bleibt 2, höchstens alle zwei Sekunden. Kein DPR, kein Material, kein Bloom. Ein Ausreißer auf diesem Takt wäre der einzige Anlass, die Prüfung aus dem Frame zu nehmen. Der ist nicht gemessen.
+3. **Sprechrate bleibt die Stufe.** Erledigt, geprüft. `stage.speechRate` ist die eine Rate. Die Oberfläche gibt sie an den Browser. Keine zweite Uhr. Die Tonhöhe bleibt fest 0,92, keine Stufe und keine Melodie. `FIRST_PAUSE_MS` bleibt 320.
+4. **Dichte bleibt die Stufe.** Erledigt, geprüft. `stage.filament` ist die eine Dichte. Jede Stufe liegt in 0.86–1, die Bewegung schreibt sie auf die Nerven. Die Signaldichte bleibt 1. Keine zweite Dichte und kein Bloom.
+5. **Letzten Visem nicht über den Texttakt halten.** Offen. Wenn `onend` später kommt als `durationMs`, bleibt sonst die letzte Form stehen. Nur nachziehen, wenn das gemessen offen ist: ein Vergleich in `sampleSpeechMouth`, dieselbe Ruhe, kein Ausblenden. Die Schätzung kann kürzer sein als die Stimme. Keine Melodie.
 
 ## Antwortform — fünf Schritte
 

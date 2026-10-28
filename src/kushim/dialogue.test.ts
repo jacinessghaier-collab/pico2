@@ -167,7 +167,7 @@ describe("shorter first sentence", () => {
     assert.equal(gapAfterSentence(0, 2, 80), Math.max(80, FIRST_PAUSE_MS));
     assert.equal(gapAfterSentence(1, 3, 80), 80);
     assert.equal(gapAfterSentence(0, 1, 200), 200);
-    assert.equal(FIRST_PAUSE_MS < 500, true);
+    assert.equal(FIRST_PAUSE_MS, 320);
   });
 });
 

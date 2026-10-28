@@ -9,6 +9,21 @@ export const FRAME_WINDOW = 60;
 /** How often the DOM line refreshes. The render loop does not wait on it. */
 export const FRAME_READOUT_MS = 250;
 
+/**
+ * Appearance read stays inside the frame.
+ * The first sample runs at once. After that the read waits this many
+ * seconds of clamped frame time: at most once per two seconds.
+ * A steady Bildzeit puts the peak on the mean, so the read is not moved out.
+ * No DPR, material, or bloom follows from that measurement.
+ */
+export const LOCK_CADENCE_S = 2;
+
+/** False only while a read has already happened and the cadence is still open. */
+export function lockReadDue(accumulatedS: number, seen: boolean): boolean {
+  if (seen && accumulatedS < LOCK_CADENCE_S) return false;
+  return true;
+}
+
 export type FrameClock = {
   /** Last accepted frame, milliseconds. */
   lastMs: number;
