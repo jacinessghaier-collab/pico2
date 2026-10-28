@@ -1,4 +1,9 @@
-/** Procedural visemes for the locked mouth. No VRM blendshapes on this rig. */
+/**
+ * Procedural visemes for the locked mouth. No VRM blendshapes on this rig.
+ * Opening follows the chest breath already used in tickKushim: level sets
+ * the strength, the inhale eases it, and the opening delta is divided by the
+ * chest scale so the torso does not stretch the viseme. No second sine.
+ */
 
 export const GAZE_LERP = 0.1;
 
@@ -19,6 +24,37 @@ export const BLINK = {
   closeSec: 0.12,
   eyeGain: 0.15,
 } as const;
+
+/** Quiet-speech floor. Loudness rises from here to 1 before the breath ease. */
+export const LEVEL_FLOOR = 0.35;
+
+/**
+ * Inhale ease. The old aa flutter was ±this on its own clock (`elapsed * 16`).
+ * It now only subtracts, and only with the chest phase, so the peak stays the level.
+ */
+export const BREATH_EASE = 0.06;
+
+/** Jaw position drop per unit of `mouth.jaw`. The lock allows `jawDrop` (0.01). */
+export const JAW_DROP = 0.05;
+
+export type MouthBreath = {
+  /** 0 at the fastest inhale, 1 at the fastest exhale. */
+  exhale: number;
+  chest: { x: number; y: number; z: number };
+};
+
+const STILL_BREATH: MouthBreath = { exhale: 1, chest: { x: 1, y: 1, z: 1 } };
+
+/**
+ * Chest phase the torso already uses. Speaking 1.35 Hz, empathize 0.55, idle 0.85.
+ * Reduced motion is still: value 0, exhale 1. Do not retune these rates here.
+ */
+export function breathCueAt(elapsed: number, speaking: boolean, calm: boolean, reduced: boolean) {
+  if (reduced) return { value: 0, exhale: 1 };
+  const hz = speaking ? 1.35 : calm ? 0.55 : 0.85;
+  const phase = elapsed * hz * Math.PI * 2;
+  return { value: Math.sin(phase), exhale: (1 - Math.cos(phase)) / 2 };
+}
 
 export type Viseme = "aa" | "ih" | "ou" | "ee" | "oh";
 
@@ -85,11 +121,15 @@ export function weightsAt(frames: VisemeFrame[], elapsedMs: number): VisemeWeigh
   return weights;
 }
 
+function axis(scale: number) {
+  return Number.isFinite(scale) && Math.abs(scale) > 1e-4 ? scale : 1;
+}
+
 export function mouthTransform(
   weights: VisemeWeights,
   level: number,
-  elapsed: number,
   reduced: boolean,
+  breath: MouthBreath = STILL_BREATH,
 ): { sx: number; sy: number; sz: number; jaw: number } {
   const sum = weights.aa + weights.ih + weights.ou + weights.ee + weights.oh;
   if (sum <= 0) return { sx: 1, sy: 1, sz: 1, jaw: 0 };
@@ -105,13 +145,19 @@ export function mouthTransform(
     sz += shape.sz * share;
     jaw += shape.jaw * share;
   });
-  const osc = reduced ? 1 : 1 + Math.sin(elapsed * 16) * 0.06 * (weights.aa / sum);
-  const gain = Math.max(0.35, Math.min(1, 0.35 + 0.65 * level)) * osc;
+  const levelGain = Math.max(LEVEL_FLOOR, Math.min(1, LEVEL_FLOOR + (1 - LEVEL_FLOOR) * level));
+  const exhale = Math.max(0, Math.min(1, breath.exhale));
+  const ease = reduced ? 1 : 1 - BREATH_EASE * (1 - exhale);
+  const gain = levelGain * ease;
+  const openSx = 1 + (sx - 1) * gain;
+  const openSy = 1 + (sy - 1) * gain;
+  const openSz = 1 + (sz - 1) * gain;
+  // sx is vertical after the lip roll, so it shares the chest's Y scale. sy is width (X), sz depth (Z).
   return {
-    sx: 1 + (sx - 1) * gain,
-    sy: 1 + (sy - 1) * gain,
-    sz: 1 + (sz - 1) * gain,
-    jaw: jaw * gain,
+    sx: 1 + (openSx - 1) / axis(breath.chest.y),
+    sy: 1 + (openSy - 1) / axis(breath.chest.x),
+    sz: 1 + (openSz - 1) / axis(breath.chest.z),
+    jaw: (jaw * gain) / axis(breath.chest.y),
   };
 }
 

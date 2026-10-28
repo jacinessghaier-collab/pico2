@@ -8,3 +8,4 @@
 - Next optimizations: modular energy flow layer (bone-attached lines/particles driven by audio/activity), emotion-tagged gestures from LLM, improved viseme mapping, hourly delta application via Git patches or agent loop. [2026-10-27]
 - Lip-sync is on the procedural mouth (FFT for Leo, timed visemes otherwise). three-vrm-lip-sync skipped to keep the locked rig. Stand DONE 8 / NEXT 9. [2026-10-28]
 - First spoken sentence is shorter than the second, with one short pause and no melody. Stand DONE 9 / NEXT 10. [2026-10-28]
+- Mouth opening follows the existing chest breath (level, 6% inhale ease, opening divided by chest scale). No second sine. Hourly DONE 6 / NEXT 7. Melody stays deferred. [2026-10-28]
