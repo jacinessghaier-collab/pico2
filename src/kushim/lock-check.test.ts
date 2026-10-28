@@ -83,19 +83,23 @@ describe("appearance lock table", () => {
     assert.equal(LOCK_CANON.signalCore, "#FFB15A");
     assert.equal(LOCK_CANON.filamentMin, 0.86);
     assert.equal(LOCK_CANON.filamentMax, 1);
-    assert.equal(LOCK_CANON.hipX, 0.11);
-    assert.deepEqual(LOCK_CANON.torsoScale, [1.05, 1, 0.72]);
-    assert.deepEqual(LOCK_CANON.skullScale, [1, 1.16, 1.02]);
-    assert.equal(LOCK.proportions.hipY, 0.96);
+    assert.equal(LOCK_CANON.hipX, 0.13);
+    assert.equal(LOCK_CANON.shellHeight, 1.67);
+    assert.equal(LOCK_CANON.shellSole, 0);
+    assert.equal(LOCK_CANON.shellVerts, 14517);
+    assert.deepEqual(LOCK_CANON.shellScale, [1, 1, 1]);
+    assert.equal(LOCK_CANON.bodySource, "kushim-athletic-male.glb");
+    assert.equal(LOCK_CANON.rimScale, 1.002);
+    assert.equal(LOCK.proportions.hipY, 0.88);
     assert.equal(LOCK.proportions.chestY, 1.22);
     assert.equal(LOCK.proportions.shoulderX, 0.2);
-    assert.equal(LOCK.proportions.shoulderLocalY, 0.28);
-    assert.equal(LOCK.proportions.upperArm, 0.4);
-    assert.equal(LOCK.proportions.foreArm, 0.31);
-    assert.equal(LOCK.proportions.thigh, 0.46);
-    assert.equal(LOCK.proportions.shin, 0.4);
+    assert.equal(LOCK.proportions.shoulderLocalY, 0.16);
+    assert.equal(LOCK.proportions.upperArm, 0.23);
+    assert.equal(LOCK.proportions.foreArm, 0.18);
+    assert.equal(LOCK.proportions.thigh, 0.42);
+    assert.equal(LOCK.proportions.shin, 0.38);
     assert.equal(LOCK.proportions.headRadius, 0.105);
-    assert.equal(LOCK.proportions.headLocalY, 0.44);
+    assert.equal(LOCK.proportions.headLocalY, 0.35);
   });
 
   it("throws if a locked value is mutated", () => {
@@ -112,21 +116,21 @@ describe("appearance lock table", () => {
   it("keeps the comparison table frozen", () => {
     assert.ok(Object.isFrozen(LOCK_CANON));
     assert.ok(Object.isFrozen(LOCK_CANON.proportions));
-    assert.ok(Object.isFrozen(LOCK_CANON.torsoScale));
+    assert.ok(Object.isFrozen(LOCK_CANON.shellScale));
     assert.throws(() => {
       (LOCK_CANON as { strom: string }).strom = "#000000";
     }, TypeError);
     assert.throws(() => {
-      (LOCK_CANON.torsoScale as unknown as number[])[0] = 2;
+      (LOCK_CANON.shellScale as unknown as number[])[0] = 2;
     }, TypeError);
     assert.equal(LOCK_CANON.strom, "#3AD7FF");
-    assert.equal(LOCK_CANON.torsoScale[0], 1.05);
+    assert.equal(LOCK_CANON.shellScale[0], 1);
   });
 });
 
 describe("figure lock", () => {
-  it("seals the rest pose and keeps the signal on the figure's right", () => {
-    const rig = createKushim();
+  it("seals the rest pose and keeps the signal on the figure's right", async () => {
+    const rig = await createKushim();
     try {
       assert.doesNotThrow(() => assertRigLock(rig, "build"));
       assert.doesNotThrow(() => assertRigLock(rig, "live"));
@@ -146,8 +150,8 @@ describe("figure lock", () => {
     }
   });
 
-  it("stays quiet through gesture, breath, filament, and the shoulder pulse", () => {
-    const rig = createKushim();
+  it("stays quiet through gesture, breath, filament, and the shoulder pulse", async () => {
+    const rig = await createKushim();
     try {
       const gestures = GESTURES as readonly Gesture[];
       for (const gesture of gestures) {
@@ -181,8 +185,8 @@ describe("figure lock", () => {
     }
   });
 
-  it("fails when the signal, silhouette, or filament leaves the lock", () => {
-    const rig = createKushim();
+  it("fails when the signal, silhouette, or filament leaves the lock", async () => {
+    const rig = await createKushim();
     try {
       rig.shoulderL.add(rig.core);
       assert.throws(() => assertRigLock(rig, "live"), LockBreach);
@@ -205,11 +209,10 @@ describe("figure lock", () => {
       assert.throws(() => assertRigLock(rig, "live"), LockBreach);
       rig.head.position.x = 0;
 
-      const skull = rig.head.children.find((child) => child.userData.lockKey === "skull");
-      assert.ok(skull);
-      skull.scale.set(2, 2, 2);
+      assert.equal(rig.shell.userData.bodySource, "kushim-athletic-male.glb");
+      rig.shell.scale.set(2, 2, 2);
       assert.throws(() => assertRigLock(rig, "live"), LockBreach);
-      skull.scale.set(1, 1.16, 1.02);
+      rig.shell.scale.set(1, 1, 1);
 
       const extra = new THREE.Mesh(
         new THREE.SphereGeometry(0.2),
@@ -225,8 +228,8 @@ describe("figure lock", () => {
     }
   });
 
-  it("keeps the mouth inside the lock for a full breath while speaking", () => {
-    const rig = createKushim();
+  it("keeps the mouth inside the lock for a full breath while speaking", async () => {
+    const rig = await createKushim();
     try {
       const restJawY = rig.jaw.position.y;
       const shapes: VisemeWeights[] = [
@@ -284,8 +287,8 @@ describe("figure lock", () => {
     }
   });
 
-  it("allows the viseme, the jaw drop, and the gaze, and rejects a stretched mouth", () => {
-    const rig = createKushim();
+  it("allows the viseme, the jaw drop, and the gaze, and rejects a stretched mouth", async () => {
+    const rig = await createKushim();
     try {
       rig.lips.scale.set(1.55, 0.72, 1.28);
       rig.jaw.position.y -= 0.008;
@@ -303,8 +306,8 @@ describe("figure lock", () => {
     }
   });
 
-  it("fails loud when the sealed figure is swapped, hidden, or joined by something else", () => {
-    const rig = createKushim();
+  it("fails loud when the sealed figure is swapped, hidden, or joined by something else", async () => {
+    const rig = await createKushim();
     const scene = new THREE.Scene();
     try {
       scene.add(rig.root);
@@ -324,13 +327,11 @@ describe("figure lock", () => {
       assert.throws(() => assertRigLock(rig, "live"), loud);
       rig.chest.layers.set(0);
 
-      const skull = rig.head.children.find((child) => child.userData.lockKey === "skull") as THREE.Mesh;
-      assert.ok(skull);
-      const sealedGeo = skull.geometry;
-      skull.geometry = new THREE.SphereGeometry(LOCK.proportions.headRadius, 8, 6);
+      const sealedGeo = rig.shell.geometry;
+      rig.shell.geometry = new THREE.SphereGeometry(LOCK.proportions.headRadius, 8, 6);
       assert.throws(() => assertRigLock(rig, "live"), loud);
-      skull.geometry.dispose();
-      skull.geometry = sealedGeo;
+      rig.shell.geometry.dispose();
+      rig.shell.geometry = sealedGeo;
 
       const fragment = rig.glass.fragmentShader;
       rig.glass.fragmentShader = `${fragment}\n`;
@@ -459,13 +460,13 @@ describe("camera and void", () => {
 });
 
 describe("stability read", () => {
-  it("holds the sealed figure across training hours on the two-second cadence", () => {
+  it("holds the sealed figure across training hours on the two-second cadence", async () => {
     assert.equal(LOCK_READ_SEC, 2);
     const dt = 0.05;
     const framesPerRead = 40;
     assert.ok(Math.abs(framesPerRead * dt - LOCK_READ_SEC) < 1e-9);
 
-    const rig = createKushim();
+    const rig = await createKushim();
     const scene = new THREE.Scene();
     const cam = frame(1280 / 800);
     const color = new THREE.Color(LOCK.void);

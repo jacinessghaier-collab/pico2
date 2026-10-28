@@ -1,4 +1,5 @@
 import type { Rig } from "@/kushim/anatomy";
+import { athleticHinge, type Axis } from "@/kushim/athletic-pose";
 import { BLINK, breathCueAt, GAZE_LERP, JAW_DROP, readGaze } from "@/kushim/lipsync";
 import { LOCK, type Gesture } from "@/kushim/lock";
 import { LOCK_CANON } from "@/kushim/lock-check";
@@ -15,30 +16,34 @@ export type Pose = {
   typing: boolean;
 };
 
-type Axis = { x: number; y: number; z: number };
+function addAxis(base: Axis, delta: Axis): Axis {
+  return { x: base.x + delta.x, y: base.y + delta.y, z: base.z + delta.z };
+}
 
 function poseTargets(gesture: Gesture): Record<string, Axis> {
+  const left = athleticHinge(1);
+  const right = athleticHinge(-1);
   const idle: Record<string, Axis> = {
-    shoulderL: { x: 0.02, y: 0.02, z: 0.1 },
-    elbowL: { x: -0.16, y: 0.02, z: 0 },
-    wristL: { x: -0.25, y: 0, z: 0.5 },
-    shoulderR: { x: 0.02, y: -0.02, z: -0.1 },
-    elbowR: { x: -0.16, y: -0.02, z: 0 },
-    wristR: { x: -0.25, y: 0, z: -0.5 },
+    shoulderL: left.shoulder,
+    elbowL: left.elbow,
+    wristL: left.wrist,
+    shoulderR: right.shoulder,
+    elbowR: right.elbow,
+    wristR: right.wrist,
     head: { x: 0, y: 0, z: 0 },
   };
   if (gesture === "explain") {
-    idle.shoulderL = { x: -1.05, y: 0.25, z: 0.28 };
-    idle.elbowL = { x: -1.25, y: 0.1, z: 0 };
-    idle.wristL = { x: 0.35, y: 0.2, z: 0.2 };
+    idle.shoulderL = addAxis(idle.shoulderL, { x: -1.07, y: 0.23, z: 0.18 });
+    idle.elbowL = addAxis(idle.elbowL, { x: -1.09, y: 0.08, z: 0 });
+    idle.wristL = addAxis(idle.wristL, { x: 0.6, y: 0.2, z: -0.3 });
     idle.head = { x: 0.04, y: 0.08, z: 0 };
   } else if (gesture === "think") {
     idle.head = { x: 0.14, y: -0.06, z: 0.04 };
-    idle.shoulderL = { x: -0.2, y: 0.1, z: 0.22 };
-    idle.elbowL = { x: -0.85, y: 0.1, z: 0 };
+    idle.shoulderL = addAxis(idle.shoulderL, { x: -0.22, y: 0.08, z: 0.12 });
+    idle.elbowL = addAxis(idle.elbowL, { x: -0.69, y: 0.08, z: 0 });
   } else if (gesture === "empathize") {
-    idle.shoulderL.z = 0.28;
-    idle.shoulderR.z = -0.28;
+    idle.shoulderL = addAxis(idle.shoulderL, { x: 0, y: 0, z: 0.18 });
+    idle.shoulderR = addAxis(idle.shoulderR, { x: 0, y: 0, z: -0.18 });
     idle.head = { x: 0.08, y: 0, z: 0.05 };
   } else if (gesture === "listen") {
     idle.head = { x: 0.06, y: 0.02, z: 0.07 };

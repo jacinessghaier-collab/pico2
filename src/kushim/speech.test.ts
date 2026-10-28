@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, before, describe, it } from "node:test";
-import { createKushim } from "@/kushim/anatomy";
+import { createKushim, type Rig } from "@/kushim/anatomy";
 import { FIRST_PAUSE_MS, gapAfterSentence } from "@/kushim/dialogue";
 import { estimateSpeechMs, type MouthBreath } from "@/kushim/lipsync";
 import { tickKushim, type Pose } from "@/kushim/motion";
@@ -43,7 +43,7 @@ function assertSampleRest(breath?: MouthBreath) {
   assert.deepEqual(reduced, { speaking: false, level: 0, sx: 1, sy: 1, sz: 1, jaw: 0 });
 }
 
-function assertMeshRest(rig: ReturnType<typeof createKushim>, restY: number) {
+function assertMeshRest(rig: Rig, restY: number) {
   assert.equal(rig.lips.scale.x, 1);
   assert.equal(rig.lips.scale.y, 1);
   assert.equal(rig.lips.scale.z, 1);
@@ -117,8 +117,8 @@ afterEach(() => {
 });
 
 describe("idle speech bus", () => {
-  it("holds a closed mouth while nothing is speaking, including past the first pause", () => {
-    const rig = createKushim();
+  it("holds a closed mouth while nothing is speaking, including past the first pause", async () => {
+    const rig = await createKushim();
     try {
       const restY = rig.jaw.position.y;
       const frames = 48;
@@ -141,8 +141,8 @@ describe("idle speech bus", () => {
     }
   });
 
-  it("rests the mouth for the whole sentence gap, then opens again on the next line", () => {
-    const rig = createKushim();
+  it("rests the mouth for the whole sentence gap, then opens again on the next line", async () => {
+    const rig = await createKushim();
     const clock = holdClock();
     const pending = speakBrowser("Abend bleibt. Der zweite Satz trägt mehr.", 1, 80, "de-DE");
     pending.catch(() => {});
@@ -204,12 +204,12 @@ describe("idle speech bus", () => {
     }
   });
 
-  it("rests the last viseme once the text clock ends, while onend is still out", () => {
+  it("rests the last viseme once the text clock ends, while onend is still out", async () => {
     // Measured open before the gate, line "da" (ih then aa, estimate ~154 ms).
     // At durationMs and 400 ms later, onend unfired, the sample stayed on aa:
     // speaking, level 0.85, sx 1.496, jaw 0.144. A wild breath opened it further.
     // weightsAt still returned aa. Same rest as idle from the text clock on. No fade.
-    const rig = createKushim();
+    const rig = await createKushim();
     const clock = holdClock();
     const text = "da";
     const pending = speakBrowser(text, 1, 80, "de-DE");
@@ -255,7 +255,7 @@ describe("idle speech bus", () => {
   });
 });
 
-function applyOpen(rig: ReturnType<typeof createKushim>) {
+function applyOpen(rig: Rig) {
   rig.lips.scale.set(1.55, 1.38, 1.28);
   rig.jaw.position.y -= 0.008;
 }

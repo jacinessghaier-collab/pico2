@@ -1,7 +1,11 @@
 import * as THREE from "three";
+import { Reflector } from "three/addons/objects/Reflector.js";
+import { athleticHinge, athleticLeg } from "@/kushim/athletic-pose";
+import { ATHLETIC_SOURCE, loadSeatedAthleticGeometry } from "@/kushim/athletic-shell";
 import { LOCK } from "@/kushim/lock";
 import {
   assertRigLock,
+  LOCK_CANON,
   markMaterial,
   markTint,
   rememberBaseline,
@@ -26,6 +30,7 @@ export type Rig = {
   fingersL: THREE.Group[];
   fingersR: THREE.Group[];
   glass: THREE.ShaderMaterial;
+  shell: THREE.Mesh;
   nerve: THREE.ShaderMaterial;
   signal: THREE.ShaderMaterial;
   ring: THREE.Points;
@@ -63,6 +68,65 @@ void main() {
   gl_FragColor = vec4(mix(uColor, uCore, fres), alpha);
 }
 `;
+
+/** Same uniforms as pico2 glass. Fresnel only, so the rim sits on the shell. */
+const rimFrag = /* glsl */ `
+uniform vec3 uColor;
+uniform vec3 uCore;
+uniform float uBoost;
+varying vec3 vN;
+varying vec3 vW;
+void main() {
+  vec3 viewDir = normalize(cameraPosition - vW);
+  float fres = pow(1.0 - abs(dot(normalize(vN), viewDir)), 3.2);
+  float alpha = fres * uBoost;
+  if (alpha < 0.04) discard;
+  gl_FragColor = vec4(mix(uColor, uCore, fres * 0.85 + 0.15), alpha);
+}
+`;
+
+const groundVert = /* glsl */ `
+uniform mat4 textureMatrix;
+varying vec4 vUv;
+varying vec3 vW;
+void main() {
+  vec4 world = modelMatrix * vec4(position, 1.0);
+  vW = world.xyz;
+  vUv = textureMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * viewMatrix * world;
+}
+`;
+
+const groundFrag = /* glsl */ `
+uniform vec3 uVoid;
+uniform vec3 uRim;
+uniform sampler2D tDiffuse;
+varying vec4 vUv;
+varying vec3 vW;
+void main() {
+  vec3 refl = texture2DProj(tDiffuse, vUv).rgb;
+  float dist = length(vW.xz);
+  float pool = smoothstep(1.7, 0.15, dist);
+  float soleL = exp(-((vW.x - 0.12) * (vW.x - 0.12) * 140.0 + (vW.z - 0.05) * (vW.z - 0.05) * 90.0));
+  float soleR = exp(-((vW.x + 0.12) * (vW.x + 0.12) * 140.0 + (vW.z - 0.05) * (vW.z - 0.05) * 90.0));
+  vec3 col = mix(uVoid, refl, pool * 0.8);
+  col += uRim * (soleL + soleR) * 0.7;
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+const GROUND_SHADER = {
+  name: "KushimGround",
+  uniforms: {
+    color: { value: new THREE.Color("#02060A") },
+    tDiffuse: { value: null },
+    textureMatrix: { value: new THREE.Matrix4() },
+    uVoid: { value: new THREE.Color("#02060A") },
+    uRim: { value: new THREE.Color("#3AD7FF") },
+  },
+  vertexShader: groundVert,
+  fragmentShader: groundFrag,
+};
 
 const coreFrag = /* glsl */ `
 uniform vec3 uColor;
@@ -224,7 +288,11 @@ function commitRibbon(
   parent.add(mesh);
 }
 
-function glassMaterial(boost: number, role: "glass" | "glass-bright") {
+function glassMaterial(
+  boost: number,
+  role: "glass" | "glass-bright",
+  fragment: string = glassFrag,
+) {
   const material = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -236,7 +304,7 @@ function glassMaterial(boost: number, role: "glass" | "glass-bright") {
       uBoost: { value: boost },
     },
     vertexShader: glassVert,
-    fragmentShader: glassFrag,
+    fragmentShader: fragment,
   });
   sealShaderChannels(material, ["uColor", "uCore", "uBoost"]);
   markMaterial(material, role);
@@ -619,25 +687,30 @@ function fillHotspot(ribbon: Ribbon) {
   }
 }
 
-function addFingers(wrist: THREE.Group, side: 1 | -1, material: THREE.Material) {
+function addFingers(wrist: THREE.Group, side: 1 | -1) {
   const fingers: THREE.Group[] = [];
   for (const spec of FINGER_SPECS) {
     const finger = new THREE.Group();
     finger.position.set(spec.x * side, -0.02, spec.z);
     finger.rotation.z = spec.rot * side;
-    const seg = solid(finger, capsule(0.008, spec.len), material);
-    seg.position.y = -spec.len * 0.45;
     wrist.add(finger);
     fingers.push(finger);
   }
   return fingers;
 }
 
-export function createKushim(): Rig {
+function aimArm(shoulder: THREE.Group, wrist: THREE.Group, side: 1 | -1) {
+  const hinge = athleticHinge(side);
+  shoulder.rotation.set(hinge.shoulder.x, hinge.shoulder.y, hinge.shoulder.z);
+  wrist.rotation.set(hinge.wrist.x, hinge.wrist.y, hinge.wrist.z);
+}
+
+export async function createKushim(seated?: THREE.BufferGeometry): Promise<Rig> {
+  const shellGeo = seated ?? (await loadSeatedAthleticGeometry());
   const P = LOCK.proportions;
   const root = new THREE.Group();
   const glass = glassMaterial(1, "glass");
-  const bright = glassMaterial(1.8, "glass-bright");
+  const bright = glassMaterial(LOCK_CANON.brightBoost, "glass-bright", rimFrag);
   const nerve = nerveMaterial(LOCK.filament, 0.34);
   const signal = nerveMaterial(LOCK.signal, 0.2);
   const disposables: Array<THREE.BufferGeometry | THREE.Material | THREE.Texture> = [
@@ -647,44 +720,36 @@ export function createKushim(): Rig {
     signal,
   ];
 
+  const shell = new THREE.Mesh(shellGeo, glass);
+  shell.name = "KushimBody";
+  shell.userData.lockKey = "shell";
+  shell.userData.bodySource = ATHLETIC_SOURCE;
+  shell.renderOrder = 1;
+  shell.frustumCulled = false;
+  root.add(shell);
+  const rim = new THREE.Mesh(shellGeo, bright);
+  rim.name = "KushimRim";
+  rim.userData.lockKey = "rim";
+  rim.scale.setScalar(LOCK_CANON.rimScale);
+  rim.renderOrder = 1;
+  rim.frustumCulled = false;
+  root.add(rim);
+
   const chest = new THREE.Group();
   chest.position.y = P.chestY;
   root.add(chest);
 
-  const torsoPts = [
-    new THREE.Vector2(0.055, -0.3),
-    new THREE.Vector2(0.12, -0.24),
-    new THREE.Vector2(0.15, -0.12),
-    new THREE.Vector2(0.125, 0.0),
-    new THREE.Vector2(0.15, 0.12),
-    new THREE.Vector2(0.175, 0.22),
-    new THREE.Vector2(0.15, 0.3),
-    new THREE.Vector2(0.075, 0.38),
-    new THREE.Vector2(0.048, 0.46),
-  ];
-  const torso = solid(chest, new THREE.LatheGeometry(torsoPts, 28), glass);
-  torso.scale.set(1.05, 1, 0.72);
-  torso.userData.lockKey = "torso";
-
   const head = new THREE.Group();
   head.position.y = P.headLocalY;
   chest.add(head);
-  const skull = solid(head, new THREE.SphereGeometry(P.headRadius, 24, 16), glass);
-  skull.scale.set(1, 1.16, 1.02);
-  skull.userData.lockKey = "skull";
-  const jaw = solid(head, new THREE.SphereGeometry(P.headRadius * 0.72, 16, 12), glass);
-  jaw.position.set(0, -0.055, 0.02);
-  jaw.scale.set(0.92, 0.62, 0.85);
+  const jaw = solid(head, new THREE.SphereGeometry(0.012, 12, 8), glass);
+  jaw.position.set(0, -0.09, 0.08);
+  jaw.scale.set(1.15, 0.55, 0.72);
   jaw.userData.restX = jaw.rotation.x;
   jaw.userData.restY = jaw.position.y;
-  const lips = solid(head, capsule(0.008, 0.045), glass);
-  lips.position.set(0, -0.045, P.headRadius * 0.86);
+  const lips = solid(head, capsule(0.004, 0.034), glass);
+  lips.position.set(0, -0.072, 0.112);
   lips.rotation.z = Math.PI / 2;
-  for (const side of [-1, 1]) {
-    const ear = solid(head, new THREE.SphereGeometry(0.028, 10, 8), glass);
-    ear.position.set(side * 0.1, -0.01, 0);
-    ear.scale.set(0.45, 1, 0.7);
-  }
   const headNerves = emptyRibbon();
   fillHead(headNerves, P.headRadius);
   commitRibbon(head, headNerves, nerve);
@@ -718,8 +783,8 @@ export function createKushim(): Rig {
   const eyes: THREE.Sprite[] = [];
   for (const side of [-1, 1]) {
     const eye = new THREE.Sprite(eyeMat);
-    eye.position.set(side * 0.032, 0.012, P.headRadius * 0.92);
-    eye.scale.set(0.028, 0.028, 1);
+    eye.position.set(side * 0.03, 0.018, 0.1);
+    eye.scale.set(0.022, 0.022, 1);
     eye.renderOrder = 4;
     eye.userData.restX = eye.position.x;
     eye.userData.restY = eye.position.y;
@@ -736,7 +801,7 @@ export function createKushim(): Rig {
   sealLookColor(browMat.color);
   markMaterial(browMat, "sprite");
   const forehead = new THREE.Sprite(browMat);
-  forehead.position.set(0, 0.055, P.headRadius * 0.9);
+  forehead.position.set(0, 0.05, 0.1);
   forehead.scale.set(0.05, 0.05, 1);
   forehead.renderOrder = 4;
   head.add(forehead);
@@ -750,10 +815,6 @@ export function createKushim(): Rig {
     const shoulder = new THREE.Group();
     shoulder.position.set(side * P.shoulderX, P.shoulderLocalY, 0);
     chest.add(shoulder);
-    const joint = solid(shoulder, new THREE.SphereGeometry(0.048, 14, 10), bright);
-    joint.scale.set(1.05, 1, 0.9);
-    const upperMesh = solid(shoulder, capsule(0.046, P.upperArm), glass);
-    upperMesh.position.y = -P.upperArm / 2;
     const upperN = emptyRibbon();
     fillLimb(upperN, P.upperArm, 4, 0.028, 0.1, 0.00085, 0.62, side * 1.3, side);
     commitRibbon(shoulder, upperN, nerve);
@@ -761,9 +822,6 @@ export function createKushim(): Rig {
     const elbow = new THREE.Group();
     elbow.position.y = -P.upperArm;
     shoulder.add(elbow);
-    solid(elbow, new THREE.SphereGeometry(0.032, 12, 8), bright);
-    const foreMesh = solid(elbow, capsule(0.036, P.foreArm), glass);
-    foreMesh.position.y = -P.foreArm / 2;
     const foreN = emptyRibbon();
     fillLimb(foreN, P.foreArm, 3, 0.02, 0.14, 0.0007, 0.5, side * 2.1, side);
     commitRibbon(elbow, foreN, nerve);
@@ -771,11 +829,8 @@ export function createKushim(): Rig {
     const wrist = new THREE.Group();
     wrist.position.y = -P.foreArm;
     elbow.add(wrist);
-    solid(wrist, new THREE.SphereGeometry(0.022, 10, 8), bright);
-    const palm = solid(wrist, new THREE.SphereGeometry(0.034, 12, 8), glass);
-    palm.position.set(0, -0.03, 0.01);
-    palm.scale.set(0.85, 1.15, 0.42);
-    const fingers = addFingers(wrist, side, glass);
+    aimArm(shoulder, wrist, side);
+    const fingers = addFingers(wrist, side);
     const handN = emptyRibbon();
     fillHand(handN, side);
     commitRibbon(wrist, handN, nerve);
@@ -841,11 +896,10 @@ export function createKushim(): Rig {
     const hip = new THREE.Group();
     hip.userData.lockKey = "hip";
     hip.userData.lockSide = side;
-    hip.position.set(side * 0.11, P.hipY, 0);
+    hip.position.set(side * LOCK_CANON.hipX, P.hipY, 0);
+    const leg = athleticLeg(side);
+    hip.rotation.set(leg.x, leg.y, leg.z);
     root.add(hip);
-    solid(hip, new THREE.SphereGeometry(0.055, 14, 10), bright);
-    const thighMesh = solid(hip, capsule(0.068, P.thigh), glass);
-    thighMesh.position.y = -P.thigh / 2;
     const hipN = emptyRibbon();
     fillLimb(hipN, P.thigh, 4, 0.038, 0.08, 0.0009, 0.66, side * 2.4, side);
     pushCurve(
@@ -869,10 +923,6 @@ export function createKushim(): Rig {
     knee.userData.lockKey = "knee";
     knee.position.y = -P.thigh;
     hip.add(knee);
-    const cap = solid(knee, new THREE.SphereGeometry(0.04, 12, 8), bright);
-    cap.position.z = 0.02;
-    const shinMesh = solid(knee, capsule(0.046, P.shin), glass);
-    shinMesh.position.y = -P.shin / 2;
     const shinN = emptyRibbon();
     fillLimb(shinN, P.shin, 3, 0.024, 0.12, 0.00072, 0.5, 3.1 + side, side);
     commitRibbon(knee, shinN, nerve);
@@ -881,17 +931,8 @@ export function createKushim(): Rig {
     ankle.userData.lockKey = "ankle";
     ankle.position.y = -P.shin;
     knee.add(ankle);
-    solid(ankle, new THREE.SphereGeometry(0.026, 10, 8), bright);
     const foot = new THREE.Group();
     ankle.add(foot);
-    const footMesh = solid(foot, capsule(0.028, 0.16), glass);
-    footMesh.rotation.x = Math.PI / 2;
-    footMesh.position.set(0, -0.028, 0.05);
-    for (let t = 0; t < 5; t++) {
-      const toe = solid(foot, capsule(0.008, 0.028), glass);
-      toe.rotation.x = Math.PI / 2;
-      toe.position.set((t - 2) * 0.014 * side, -0.02, 0.145);
-    }
     const footN = emptyRibbon();
     fillFoot(footN, side);
     commitRibbon(foot, footN, nerve);
@@ -908,6 +949,29 @@ export function createKushim(): Rig {
   }
   addRibbon(pelvis, ringPts, 0.12, 0.00048, 0.62, 0.18, 0);
   commitRibbon(root, pelvis, nerve);
+
+  const ground = new Reflector(new THREE.PlaneGeometry(24, 24), {
+    color: LOCK.void,
+    textureWidth: 768,
+    textureHeight: 768,
+    clipBias: 0.003,
+    multisample: 0,
+    shader: GROUND_SHADER,
+  });
+  ground.name = "KushimGround";
+  ground.userData.lockKey = "ground";
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = LOCK_CANON.groundY;
+  ground.renderOrder = 0;
+  const groundMat = ground.material as THREE.ShaderMaterial;
+  groundMat.depthWrite = true;
+  groundMat.transparent = false;
+  groundMat.blending = THREE.NormalBlending;
+  groundMat.uniforms.uVoid.value = new THREE.Color(LOCK.void);
+  groundMat.uniforms.uRim.value = new THREE.Color(LOCK.strom);
+  sealShaderChannels(groundMat, ["uVoid", "uRim"]);
+  markMaterial(groundMat, "ground");
+  root.add(ground);
 
   root.traverse((obj: THREE.Object3D) => {
     const mesh = obj as THREE.Mesh;
@@ -931,6 +995,7 @@ export function createKushim(): Rig {
     fingersL: left.fingers,
     fingersR: right.fingers,
     glass,
+    shell,
     nerve,
     signal,
     ring,
@@ -938,6 +1003,7 @@ export function createKushim(): Rig {
     ringJitter,
     core,
     dispose: () => {
+      ground.dispose();
       const seen = new Set<THREE.BufferGeometry | THREE.Material | THREE.Texture>();
       for (const item of disposables) {
         if (seen.has(item)) continue;

@@ -1,4 +1,9 @@
-/** Visual lock. Hourly passes may not change these values. */
+/**
+ * Visual lock. The athletic GLB seats these joints.
+ * Hourly passes may not change these values.
+ * Shoulder height and arm lengths follow the A-pose mesh so the
+ * existing filament chains land inside the limbs.
+ */
 
 export const LOCK = {
   void: "#02060A",
@@ -9,16 +14,20 @@ export const LOCK = {
   filament: "#D4F04A",
   filamentKern: "#F7FFC2",
   proportions: {
-    hipY: 0.96,
+    hipY: 0.88,
     chestY: 1.22,
     shoulderX: 0.2,
-    shoulderLocalY: 0.28,
-    upperArm: 0.4,
-    foreArm: 0.31,
-    thigh: 0.46,
-    shin: 0.4,
+    /** World shoulder y = chestY + this = 1.38, the mesh deltoid. */
+    shoulderLocalY: 0.16,
+    /** With foreArm, the chain ends at the mesh wrist (0.41 m). */
+    upperArm: 0.23,
+    foreArm: 0.18,
+    /** Stance angles outward; hip rotation carries these lengths into the leg. */
+    thigh: 0.42,
+    shin: 0.38,
     headRadius: 0.105,
-    headLocalY: 0.44,
+    /** World head origin 1.57, the mesh skull center. */
+    headLocalY: 0.35,
   },
 } as const;
 

@@ -11,16 +11,16 @@ describe("visual lock", () => {
     assert.equal(LOCK.filament, "#D4F04A");
     assert.equal(LOCK.filamentKern, "#F7FFC2");
     assert.deepEqual(LOCK.proportions, {
-      hipY: 0.96,
+      hipY: 0.88,
       chestY: 1.22,
       shoulderX: 0.2,
-      shoulderLocalY: 0.28,
-      upperArm: 0.4,
-      foreArm: 0.31,
-      thigh: 0.46,
-      shin: 0.4,
+      shoulderLocalY: 0.16,
+      upperArm: 0.23,
+      foreArm: 0.18,
+      thigh: 0.42,
+      shin: 0.38,
       headRadius: 0.105,
-      headLocalY: 0.44,
+      headLocalY: 0.35,
     });
     assert.deepEqual([...GESTURES], [
       "idle",

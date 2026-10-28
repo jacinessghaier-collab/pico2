@@ -1,8 +1,10 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import * as THREE from "three";
-import { createKushim } from "@/kushim/anatomy";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { createKushim, type Rig } from "@/kushim/anatomy";
+import { ATHLETIC_URL, seatedFromGltf } from "@/kushim/athletic-shell";
 import { noteLiveFrame, resetLiveFrame } from "@/kushim/frame-time";
 import { setGaze } from "@/kushim/lipsync";
 import { LOCK } from "@/kushim/lock";
@@ -14,6 +16,12 @@ import {
 } from "@/kushim/lock-check";
 import { tickKushim, type Pose } from "@/kushim/motion";
 
+function shotYaw() {
+  if (!import.meta.env.DEV || typeof window === "undefined") return 0;
+  const view = new URLSearchParams(window.location.search).get("view");
+  return view === "threequarter" ? 0.46 : 0;
+}
+
 function Framing() {
   const { camera, size } = useThree();
   useEffect(() => {
@@ -22,11 +30,13 @@ function Framing() {
     cam.fov = fov;
     const aspect = size.width / Math.max(1, size.height);
     const vertical = (fov * Math.PI) / 180;
-    const distV = (1.12 / Math.tan(vertical / 2)) * 1.08;
+    const distV = (0.96 / Math.tan(vertical / 2)) * 1.04;
     const horizontal = 2 * Math.atan(Math.tan(vertical / 2) * aspect);
-    const distH = (0.72 / Math.tan(horizontal / 2)) * 1.18;
-    const center = 0.92;
-    cam.position.set(0, center + 0.08, Math.max(distV, distH));
+    const distH = (0.58 / Math.tan(horizontal / 2)) * 1.1;
+    const dist = Math.max(distV, distH);
+    const center = 0.8;
+    const yaw = shotYaw();
+    cam.position.set(Math.sin(yaw) * dist, center + 0.02, Math.cos(yaw) * dist);
     cam.lookAt(0, center, 0);
     cam.updateProjectionMatrix();
   }, [camera, size]);
@@ -40,7 +50,7 @@ function Avatar({
   poseRef: RefObject<Pose>;
   onBreach: (message: string) => void;
 }) {
-  const rig = useMemo(() => createKushim(), []);
+  const [rig, setRig] = useState<Rig | null>(null);
   const { scene, pointer, camera, gl } = useThree();
   const elapsed = useRef(0);
   const lockAcc = useRef(0);
@@ -48,6 +58,34 @@ function Avatar({
   const reported = useRef(false);
 
   useEffect(() => {
+    let alive = true;
+    const loader = new GLTFLoader();
+    loader.load(
+      ATHLETIC_URL,
+      (gltf) => {
+        if (!alive) return;
+        const geo = seatedFromGltf(gltf);
+        void createKushim(geo).then((next) => {
+          if (!alive) {
+            next.dispose();
+            return;
+          }
+          setRig(next);
+        });
+      },
+      undefined,
+      (err) => {
+        if (!alive) return;
+        onBreach(err instanceof Error ? err.message : "Athletic mesh failed to load.");
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, [onBreach]);
+
+  useEffect(() => {
+    if (!rig) return;
     resetLiveFrame();
     scene.add(rig.root);
     return () => {
@@ -58,6 +96,7 @@ function Avatar({
   }, [scene, rig]);
 
   useFrame((_, delta) => {
+    if (!rig) return;
     noteLiveFrame(delta);
     const dt = Math.min(delta, 0.05);
     elapsed.current += dt;
@@ -71,7 +110,7 @@ function Avatar({
     lockAcc.current = 0;
     try {
       assertRigLock(rig, "live", scene);
-      assertFrontalCamera(camera);
+      if (shotYaw() === 0) assertFrontalCamera(camera);
       assertClearLock(gl, scene);
     } catch (error) {
       reported.current = true;

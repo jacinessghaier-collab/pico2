@@ -3,9 +3,11 @@
  * Legal motion (breath, gestures, filament 0.86–1, shoulder spark, viseme,
  * jaw drop, gaze, blink) is the envelope from tickKushim and lipsync —
  * update those constants in the same change.
- * Silhouette, palette, the single red site, void, and the straight-on camera stay put.
+ * Silhouette source is the athletic GLB, not the lathe marionette.
+ * Palette, the single red site, void, and the straight-on camera stay put.
  * The re-read also rejects a swapped shader or geometry, a reparented or hidden
- * part, a yawed or upside-down camera, and a scene that covers the void.
+ * part, a lathe shell, an orb joint, a yawed or upside-down camera,
+ * and a scene that covers the void.
  * The live scene re-reads on LOCK_READ_SEC. There is no second checker and no post-pass.
  */
 import * as THREE from "three";
@@ -35,20 +37,27 @@ export const LOCK_CANON = {
   signalCore: "#FFB15A",
   spriteInner: "#FFFFFF",
   proportions: {
-    hipY: 0.96,
+    hipY: 0.88,
     chestY: 1.22,
     shoulderX: 0.2,
-    shoulderLocalY: 0.28,
-    upperArm: 0.4,
-    foreArm: 0.31,
-    thigh: 0.46,
-    shin: 0.4,
+    shoulderLocalY: 0.16,
+    upperArm: 0.23,
+    foreArm: 0.18,
+    thigh: 0.42,
+    shin: 0.38,
     headRadius: 0.105,
-    headLocalY: 0.44,
+    headLocalY: 0.35,
   },
-  hipX: 0.11,
-  torsoScale: [1.05, 1, 0.72],
-  skullScale: [1, 1.16, 1.02],
+  hipX: 0.13,
+  /** Athletic shell, seated to 1.67 m with soles on y = 0. */
+  shellHeight: 1.67,
+  shellSole: 0,
+  shellVerts: 14517,
+  shellScale: [1, 1, 1],
+  bodySource: "kushim-athletic-male.glb",
+  /** Coincident rim. Larger than this opens a dark gap outside the glass. */
+  rimScale: 1.002,
+  groundY: -0.001,
   glassBoost: 1,
   brightBoost: 1.8,
   coreBoost: 2.4,
@@ -92,7 +101,14 @@ function freezeCanon(value: object) {
 freezeCanon(LOCK_CANON);
 
 export type MaterialRole =
-  "glass" | "glass-bright" | "nerve" | "signal" | "core" | "sprite" | "ring";
+  | "glass"
+  | "glass-bright"
+  | "nerve"
+  | "signal"
+  | "core"
+  | "sprite"
+  | "ring"
+  | "ground";
 
 export type LockedRig = {
   root: THREE.Object3D;
@@ -137,7 +153,7 @@ type Baseline = {
   xform: Map<THREE.Object3D, Xform>;
 };
 
-type Mark = { lockKey?: string; lockSide?: number };
+type Mark = { lockKey?: string; lockSide?: number; bodySource?: string };
 type Tint = { inner: string; outer: string };
 
 const roles = new WeakMap<THREE.Material, MaterialRole>();
@@ -451,34 +467,78 @@ function auditSkeleton(rig: LockedRig, phase: Phase) {
     hip: [] as THREE.Object3D[],
     knee: [] as THREE.Object3D[],
     ankle: [] as THREE.Object3D[],
-    skull: [] as THREE.Object3D[],
-    torso: [] as THREE.Object3D[],
+    shell: [] as THREE.Object3D[],
+    rim: [] as THREE.Object3D[],
+    ground: [] as THREE.Object3D[],
   };
   rig.root.traverse((obj) => {
     const key = markData(obj).lockKey;
     if (key && key in found) found[key as keyof typeof found].push(obj);
+    const geo = geometryOf(obj);
+    if (!geo) return;
+    if (geo.type === "LatheGeometry") {
+      breach("Die Lathe-Hülle ist zurück.", "The lathe shell came back.");
+    }
+    if (geo.type === "SphereGeometry" && obj !== rig.jaw && obj !== rig.core) {
+      breach("Ein Kugelgelenk sitzt auf der Figur.", "An orb joint is on the figure.");
+    }
   });
-  if (found.torso.length !== 1 || found.skull.length !== 1) {
-    breach("Rumpf oder Schädel fehlt.", "Torso or skull is missing.");
+  if (found.shell.length !== 1 || found.rim.length !== 1 || found.ground.length !== 1) {
+    breach("Hülle, Rand oder Boden fehlt.", "Shell, rim, or ground is missing.");
   }
   if (found.hip.length !== 2 || found.knee.length !== 2 || found.ankle.length !== 2) {
     breach("Beine sind nicht mehr vollständig.", "The legs are no longer complete.");
   }
 
-  const torso = found.torso[0];
-  const skull = found.skull[0];
-  if (torso.parent !== rig.chest || skull.parent !== rig.head) {
-    breach("Rumpf oder Schädel wurde umgehängt.", "Torso or skull was reparented.");
+  const shell = found.shell[0] as THREE.Mesh;
+  const rim = found.rim[0] as THREE.Mesh;
+  const ground = found.ground[0];
+  if (shell.parent !== rig.root || rim.parent !== rig.root || ground.parent !== rig.root) {
+    breach("Hülle, Rand oder Boden wurde umgehängt.", "Shell, rim, or ground was reparented.");
   }
-  mustClose(torso.scale.x, LOCK_CANON.torsoScale[0], "Rumpfbreite", "Torso width");
-  mustClose(torso.scale.y, LOCK_CANON.torsoScale[1], "Rumpfhöhe", "Torso height");
-  mustClose(torso.scale.z, LOCK_CANON.torsoScale[2], "Rumpftiefe", "Torso depth");
-  mustClose(skull.scale.x, LOCK_CANON.skullScale[0], "Schädelbreite", "Skull width");
-  mustClose(skull.scale.y, LOCK_CANON.skullScale[1], "Schädellänge", "Skull length");
-  mustClose(skull.scale.z, LOCK_CANON.skullScale[2], "Schädeltiefe", "Skull depth");
-  const skullRadius = ((skull as THREE.Mesh).geometry as THREE.SphereGeometry).parameters?.radius;
-  if (!Number.isFinite(skullRadius)) breach("Schädelradius fehlt.", "Skull radius is missing.");
-  mustClose(skullRadius, P.headRadius, "Schädelradius", "Skull radius");
+  if ((shell.material as THREE.Material) !== rig.glass) {
+    breach("Die Hülle trägt nicht das Pico-Glas.", "The shell is not wearing the pico glass.");
+  }
+  if (markData(shell).bodySource !== LOCK_CANON.bodySource) {
+    breach(
+      "Die Glashülle kommt nicht aus dem athletischen Mesh.",
+      "The glass shell is not the athletic mesh.",
+    );
+  }
+  mustClose(shell.scale.x, LOCK_CANON.shellScale[0], "Hüllenbreite", "Shell width");
+  mustClose(shell.scale.y, LOCK_CANON.shellScale[1], "Hüllenhöhe", "Shell height");
+  mustClose(shell.scale.z, LOCK_CANON.shellScale[2], "Hüllentiefe", "Shell depth");
+  mustClose(rim.scale.x, LOCK_CANON.rimScale, "Randbreite", "Rim width");
+  mustClose(rim.scale.y, LOCK_CANON.rimScale, "Randhöhe", "Rim height");
+  mustClose(rim.scale.z, LOCK_CANON.rimScale, "Randtiefe", "Rim depth");
+  const shellGeo = shell.geometry;
+  const pos = shellGeo?.getAttribute("position");
+  if (!pos || pos.count !== LOCK_CANON.shellVerts) {
+    breach(
+      "Die athletische Hülle hat nicht mehr ihre Punktzahl.",
+      "The athletic shell no longer has its vertex count.",
+    );
+  }
+  if (rim.geometry !== shellGeo) {
+    breach("Der Cyan-Rand nutzt eine andere Hülle.", "The cyan rim uses a different shell.");
+  }
+  shellGeo.computeBoundingBox();
+  const box = shellGeo.boundingBox;
+  if (!box) breach("Die Hülle hat keine Ausdehnung.", "The shell has no bounds.");
+  mustClose(
+    box.max.y - box.min.y,
+    LOCK_CANON.shellHeight,
+    "Körperhöhe",
+    "Body height",
+    0.002,
+  );
+  mustClose(box.min.y, LOCK_CANON.shellSole, "Sohlenhöhe", "Sole height", 0.002);
+  mustClose(ground.position.y, LOCK_CANON.groundY, "Bodenhöhe", "Ground height");
+  mustClose(ground.position.x, 0, "Boden seitlich", "Ground lateral");
+  mustClose(ground.position.z, 0, "Boden in der Tiefe", "Ground depth");
+  mustClose(ground.rotation.x, -Math.PI / 2, "Bodenneigung", "Ground pitch");
+  mustClose(ground.rotation.y, 0, "Bodendrehung", "Ground yaw");
+  mustClose(ground.rotation.z, 0, "Bodenrolle", "Ground roll");
 
   const sides = new Set<number>();
   for (const hip of found.hip) {
@@ -616,6 +676,26 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
   expectCount("core", 1);
   expectCount("ring", 1);
   expectCount("sprite", 3);
+  expectCount("ground", 1);
+
+  const grounds: THREE.ShaderMaterial[] = [];
+  rig.root.traverse((obj) => {
+    for (const material of materialsOf(obj)) {
+      if (roles.get(material) === "ground") grounds.push(material as THREE.ShaderMaterial);
+    }
+  });
+  const groundMat = grounds[0];
+  if (!groundMat) breach("Der Boden fehlt.", "The ground is missing.");
+  mustHex(colorSlot(groundMat, "uVoid"), LOCK_CANON.void, "Bodenfarbe Void", "Ground void color");
+  mustHex(colorSlot(groundMat, "uRim"), LOCK_CANON.strom, "Bodenfarbe Strom", "Ground strom color");
+  if (
+    groundMat.blending !== THREE.NormalBlending ||
+    groundMat.transparent ||
+    !groundMat.depthWrite ||
+    groundMat.premultipliedAlpha
+  ) {
+    breach("Der Boden ist keine dunkle Spiegelfläche.", "The ground is not a dark mirror.");
+  }
 
   const glassBoost = numberSlot(rig.glass, "uBoost", true);
   mustClose(glassBoost, LOCK_CANON.glassBoost, "Glas-Boost", "Glass boost");
