@@ -589,12 +589,10 @@ function upperGlass(t: number) {
   const src = upperCenter(t);
   const shoulderHalf = shellRadius(LOCK.proportions.shoulderLocalY) * SHELL_SX;
   const peak = Math.max(...UPPER_RADII);
-  const hang = shoulderHalf - peak;
   const fitR = src.r;
-  let center = hang;
-  const torsoHalf = shellRadius(src.y) * SHELL_SX;
-  if (center < torsoHalf + 0.008) center = torsoHalf + 0.008;
-  if (center + fitR > shoulderHalf) center = shoulderHalf - fitR;
+  // Thickest section meets the acromion. Thinner sections taper in on that hang,
+  // instead of riding the ribcage.
+  const center = shoulderHalf - peak;
   return { r: fitR, y: src.y, center };
 }
 
@@ -810,9 +808,8 @@ function fadeTorsoSides(geo: THREE.BufferGeometry) {
     // The neck continues inside the skull. Fade it so the open lathe
     // does not draw a second ring under the jaw.
     if (y > 0.44) cover = Math.min(cover, hermite(0.52, 0.44, y));
-    // The iliac stays. Below it the thigh owns the silhouette, so the
-    // open ring cannot draw a hem across the legs.
-    if (y < -0.18) cover = Math.min(cover, hermite(-0.32, -0.18, y));
+    // Keep the crotch V. Fade only the open tip so it does not draw a hem.
+    if (y < -0.36) cover = Math.min(cover, hermite(-0.405, -0.36, y));
     // Only the shell the arm already covers. The front of the chest stays,
     // so the pec rim does not invert.
     const yBot = yTop - P.upperArm;
@@ -860,9 +857,9 @@ function shoulderSlope(side: 1 | -1) {
   const pos: number[] = [];
   const fade: number[] = [];
   const idx: number[] = [];
-  const p0 = new THREE.Vector3(0.07, 0.31, 0.016);
-  const p1 = new THREE.Vector3(0.17, 0.25, 0.028);
-  const p2 = new THREE.Vector3(0.155, 0.12, 0.01);
+  const p0 = new THREE.Vector3(0.055, 0.3, 0.014);
+  const p1 = new THREE.Vector3(0.12, 0.24, 0.02);
+  const p2 = new THREE.Vector3(0.1, 0.12, 0.008);
   const c = new THREE.Vector3();
   const tang = new THREE.Vector3();
   const sideV = new THREE.Vector3();
@@ -1075,30 +1072,74 @@ const SKULL_SY = 1.16;
 const HIP_X = 0.11;
 /**
  * Human torso. Radii are the lathe, before SHELL_SX.
- * Acromion sits on the arm, trapezius eases into the neck, waist is
- * narrower than chest and iliac. No shoulder shelf.
+ * Neck to acromion is about 19°. The cap rounds into a chest narrower
+ * than the deltoid. Waist is about three quarters of that chest, hips
+ * a little wider, then a soft V into the thighs.
  */
 const SHELL_LATHE: Array<[number, number]> = [
-  [0.112, -0.44],
-  [0.132, -0.38],
-  [0.158, -0.32],
-  [0.182, -0.27],
-  [0.196, -0.21],
-  [0.182, -0.14],
-  [0.166, -0.06],
-  [0.15, 0.02],
-  [0.162, 0.09],
-  [0.174, 0.15],
-  [0.184, 0.2],
-  [0.19, 0.25],
+  [0.026, -0.46],
+  [0.038, -0.4],
+  [0.055, -0.34],
+  [0.082, -0.28],
+  [0.118, -0.22],
+  [0.098, -0.15],
+  [0.086, -0.08],
+  [0.09, -0.02],
+  [0.1, 0.05],
+  [0.114, 0.13],
+  [0.112, 0.18],
+  [0.128, 0.22],
+  [0.168, 0.248],
+  [0.196, 0.262],
   [0.19, 0.28],
-  [0.175, 0.292],
-  [0.12, 0.312],
-  [0.072, 0.335],
-  [0.05, 0.36],
-  [0.044, 0.42],
+  [0.162, 0.294],
+  [0.112, 0.308],
+  [0.072, 0.32],
+  [0.052, 0.332],
+  [0.048, 0.36],
+  [0.044, 0.44],
   [0.042, 0.52],
 ];
+/**
+ * Half-depth after the torso's Z scale. Matches the old ellipse, except the
+ * acromion, which stays ribcage-deep so the side view is not a shelf.
+ */
+function shellDepth(y: number) {
+  const classic = shellRadius(y) * SHELL_SZ;
+  const rib = shellRadius(0.12) * SHELL_SZ;
+  const shoulder = hermite(0.23, 0.29, y) * (1 - hermite(0.29, 0.34, y));
+  return classic * (1 - shoulder) + Math.min(classic, rib * 1.2) * shoulder;
+}
+
+/** Elliptical torso. X is the front silhouette; Z is the ribcage depth. */
+function ellipticTorso() {
+  const seg = 28;
+  const pos: number[] = [];
+  const idx: number[] = [];
+  const row = seg + 1;
+  for (let i = 0; i < SHELL_LATHE.length; i++) {
+    const [r, y] = SHELL_LATHE[i];
+    const zr = shellDepth(y) / SHELL_SZ;
+    for (let j = 0; j <= seg; j++) {
+      const a = (j / seg) * Math.PI * 2;
+      let s = Math.sin(a);
+      if (j === 0 || j === seg || Math.abs(s) < 1e-7) s = 0;
+      pos.push(Math.cos(a) * r, y, s * zr);
+    }
+  }
+  for (let i = 0; i < SHELL_LATHE.length - 1; i++) {
+    for (let j = 0; j < seg; j++) {
+      const a = i * row + j;
+      const b = a + row;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
 /** Crossfade length shared by a parent distal end and its child proximal end. */
 const BLEND = { elbow: 0.14, knee: 0.14, shoulder: 0.02, hip: 0.05 };
 /**
@@ -1449,7 +1490,7 @@ function fillTorso(ribbon: Ribbon) {
     const r = shellRadius(Math.max(-0.34, Math.min(0.5, y)));
     return {
       x: Math.max(0.012, r * SHELL_SX * inset),
-      z: Math.max(0.008, r * SHELL_SZ * inset),
+      z: Math.max(0.008, shellDepth(y) * inset),
     };
   };
   const massAt = (y: number) => {
@@ -2279,10 +2320,7 @@ export function createKushim(): Rig {
   chest.position.y = P.chestY;
   root.add(chest);
 
-  const torsoGeo = new THREE.LatheGeometry(
-    SHELL_LATHE.map(([r, y]) => new THREE.Vector2(r, y)),
-    28,
-  );
+  const torsoGeo = ellipticTorso();
   fadeTorsoSides(torsoGeo);
   const torso = transmit(markBodyRim(solid(chest, torsoGeo, glass)));
   torso.scale.set(SHELL_SX, 1, SHELL_SZ);
@@ -2409,7 +2447,7 @@ export function createKushim(): Rig {
     shoulder.add(elbow);
     const shoulderHalf = shellRadius(P.shoulderLocalY) * SHELL_SX;
     const hang = shoulderHalf - Math.max(...UPPER_RADII);
-    const foreInset = Math.max(0, P.shoulderX - hang);
+    const foreInset = Math.max(0, P.shoulderX - hang - 0.018);
     const elbowBridge = markBodyRim(solid(elbow, jointBridge(LIMB.fore.r0, BLEND.elbow), glass));
     elbowBridge.position.x = side * -foreInset;
     transmit(markBodyRim(solid(
