@@ -76,7 +76,7 @@ export function createFrameClock(windowSize = FRAME_WINDOW) {
   };
 }
 
-let live = createFrameClock();
+const live = createFrameClock();
 
 export function noteLiveFrame(deltaSeconds: number): FrameClock {
   return live.note(deltaSeconds);

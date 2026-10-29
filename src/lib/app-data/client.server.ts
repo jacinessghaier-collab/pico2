@@ -278,7 +278,9 @@ function tokenIdentityKey(token: string): string {
             .digest("base64url");
         }
       }
-    } catch {}
+    } catch {
+      // Payload is not JSON, so it has no sub/team claims. Hash the raw token.
+    }
   }
   return createHash("sha256").update(token).digest("base64url");
 }
