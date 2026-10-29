@@ -999,7 +999,6 @@ const SHELL_SX = 1.05;
 /** Rounder than the old 0.72 panel, still an oval ribcage. */
 const SHELL_SZ = 0.78;
 const SKULL_SY = 1.16;
-const SKULL_SZ = 1.02;
 const HIP_X = 0.11;
 /**
  * Human torso. Radii are the lathe, before SHELL_SX.
@@ -1195,7 +1194,7 @@ float sdShin(vec2 p, float s) {${shinPair}}
 
 float sdBody(vec2 p) {
   float d = sdTorso(p);
-  d = smin(d, sdEllipse(p, vec2(0.0, ${g4(headY)}), vec2(0.1000, 0.1120)), 0.02);
+  d = smin(d, sdEllipse(p, vec2(0.0, ${g4(headY)}), vec2(${g4(P.headRadius)}, ${g4(P.headRadius * SKULL_SY)})), 0.036);
   d = smin(d, sdHug(p, 1.0), 0.04);
   d = smin(d, sdHug(p, -1.0), 0.04);
   d = smin(d, sdFore(p, 1.0), 0.028);
@@ -2093,19 +2092,16 @@ function fillFoot(ribbon: Ribbon, side: 1 | -1) {
 }
 
 function fillHead(ribbon: Ribbon, radius: number) {
-  // Soft volume inside the sculpted skull. Discs, not rows.
+  // Soft volume inside the current lathe skull. Discs, not rows.
   // A long bar stripes, and a thick curve fans. No brow, eyes, nose, or spark.
   // Inset so the cyan glass rim stays the silhouette and the void stays outside.
-  // The jaw narrows, so the cloud narrows with it.
-  const rx = radius * 0.7;
+  const rx = radius * 0.9;
   const ry = radius * 1.16 * 0.9;
-  const rz = radius * 1.02 * 0.72;
+  const rz = radius * 1.02 * 0.86;
   let seed = 700;
   const h = () => unitHash(seed++);
-  const ell = (x: number, y: number, z: number) => {
-    const jaw = y < 0 ? Math.max(0.62, 1 + y * 2.1) : 1;
-    return (x * x) / (rx * rx * jaw * jaw) + (y * y) / (ry * ry) + (z * z) / (rz * rz);
-  };
+  const ell = (x: number, y: number, z: number) =>
+    (x * x) / (rx * rx) + (y * y) / (ry * ry) + (z * z) / (rz * rz);
 
   const pick = (bias: number) => {
     for (let n = 0; n < 24; n++) {
@@ -2155,10 +2151,10 @@ function fillHead(ribbon: Ribbon, radius: number) {
   };
 
   for (let i = 0; i < 22; i++) {
-    disc(radius * (0.55 + h() * 0.16), 0.045, 0.22 + h() * 0.06, 0.02 + h() * 0.04, 0.35);
+    disc(radius * (0.82 + h() * 0.24), 0.16, 0.3 + h() * 0.08, 0.02 + h() * 0.04, 0.15);
   }
-  for (let i = 0; i < 28; i++) {
-    disc(radius * (0.32 + h() * 0.12), 0.028, 0.26 + h() * 0.08, 0.05 + h() * 0.08, 0.55);
+  for (let i = 0; i < 34; i++) {
+    disc(radius * (0.46 + h() * 0.18), 0.1, 0.36 + h() * 0.12, 0.05 + h() * 0.08, 0.35);
   }
 }
 
@@ -2197,59 +2193,6 @@ function fillPelvis(ribbon: Ribbon, hipY: number) {
   }
 }
 
-/**
- * Human skull in head space, written back into the sphere's local space
- * (the mesh scale is still the locked [1, 1.16, 1.02]).
- * Cranium, brow, nose, lips, chin, ears, and a short neck stump.
- * Even in X: theta and -theta are mirrors.
- */
-function skullSurface(dx: number, dy: number, dz: number) {
-  const theta = Math.atan2(dx, dz);
-  const front = Math.max(0, dz);
-  const yNorm = dy;
-  const ax = 0.092;
-  const ay = 0.128;
-  const az = 0.096;
-  let x = dx * ax;
-  let y = dy * ay;
-  let z = dz * az;
-  const parietal = Math.exp(-((yNorm - 0.32) ** 2) / 0.09);
-  x *= 1 + parietal * 0.05;
-  const jaw = hermite(0.0, -0.55, yNorm);
-  x *= 1 - jaw * 0.12;
-  const chinW = Math.exp(-((yNorm + 0.72) ** 2) / 0.045) * front;
-  const nose = Math.exp(-((yNorm + 0.08) ** 2) / 0.014) * front ** 1.6;
-  const brow = Math.exp(-((yNorm - 0.28) ** 2) / 0.02) * front;
-  const lips = Math.exp(-((yNorm + 0.46) ** 2) / 0.008) * front ** 2;
-  const ear =
-    Math.exp(-((yNorm + 0.02) ** 2) / 0.02) * Math.exp(-((Math.abs(dx) - 0.95) ** 2) / 0.012);
-  z += nose * 0.036 + brow * 0.012 + lips * 0.012 + chinW * 0.026;
-  y -= chinW * 0.02;
-  x += Math.sign(dx || 1) * ear * 0.012;
-  const neckBase = hermite(-0.2, -0.92, yNorm);
-  const neck = neckBase * (1 - front * 0.82);
-  const neckR = 0.048;
-  const neckY = -0.06 - neckBase * 0.08;
-  x = x * (1 - neck) + Math.sin(theta) * neckR * neck;
-  z = z * (1 - neck) + Math.cos(theta) * neckR * 0.92 * neck;
-  y = y * (1 - neck) + neckY * neck;
-  return { x, y, z };
-}
-
-function sculptSkull(geo: THREE.BufferGeometry) {
-  const pos = geo.getAttribute("position");
-  const v = new THREE.Vector3();
-  for (let i = 0; i < pos.count; i++) {
-    v.fromBufferAttribute(pos, i);
-    const len = v.length();
-    if (len < 1e-6) continue;
-    v.multiplyScalar(1 / len);
-    const hs = skullSurface(v.x, v.y, v.z);
-    pos.setXYZ(i, hs.x, hs.y / SKULL_SY, hs.z / SKULL_SZ);
-  }
-  pos.needsUpdate = true;
-}
-
 export function createKushim(): Rig {
   const P = LOCK.proportions;
   const root = new THREE.Group();
@@ -2273,10 +2216,8 @@ export function createKushim(): Rig {
   const head = new THREE.Group();
   head.position.y = P.headLocalY;
   chest.add(head);
-  const skullGeo = new THREE.SphereGeometry(P.headRadius, 64, 48);
-  sculptSkull(skullGeo);
-  const skull = transmit(markBodyRim(solid(head, skullGeo, glass)));
-  skull.scale.set(1, SKULL_SY, SKULL_SZ);
+  const skull = transmit(markBodyRim(solid(head, new THREE.SphereGeometry(P.headRadius, 24, 16), glass)));
+  skull.scale.set(1, SKULL_SY, 1.02);
   skull.userData.lockKey = "skull";
   const jaw = solid(head, new THREE.SphereGeometry(P.headRadius * 0.72, 16, 12), glass);
   jaw.position.set(0, 0, 0);
@@ -2290,7 +2231,7 @@ export function createKushim(): Rig {
   lips.rotation.z = Math.PI / 2;
   for (const side of [-1, 1] as const) {
     const ear = solid(head, new THREE.SphereGeometry(0.028, 10, 8), glass);
-    ear.position.set(side * 0.055, -0.004, 0);
+    ear.position.set(side * 0.09, -0.008, -0.01);
     ear.scale.set(0.18, 0.48, 0.28);
   }
   const headNerves = emptyRibbon();

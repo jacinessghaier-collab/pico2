@@ -158,7 +158,7 @@ describe("lathe shell", () => {
     }
   });
 
-  it("shapes a head, not a ringed ball, on the body rim", () => {
+  it("keeps a faceless smooth skull on the body rim", () => {
     const skull = meshByKey(rig.root, "skull");
     const kante = skull.geometry.getAttribute("aKante");
     const band = skull.geometry.getAttribute("aBand");
@@ -168,31 +168,16 @@ describe("lathe shell", () => {
       assert.equal(band.getX(i), 1, "skull shares the even body rim");
     }
     const pos = skull.geometry.getAttribute("position");
-    let noseZ = -Infinity;
-    let noseY = 0;
-    let crown = -Infinity;
-    let chin = Infinity;
-    let temple = 0;
-    let neck = 0;
+    const radius = LOCK.proportions.headRadius;
+    let worst = 0;
     for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i) * skull.scale.x;
-      const y = pos.getY(i) * skull.scale.y;
-      const z = pos.getZ(i) * skull.scale.z;
-      if (z > noseZ) {
-        noseZ = z;
-        noseY = y;
-      }
-      crown = Math.max(crown, y);
-      temple = Math.max(temple, Math.abs(x));
-      if (z > 0.05 && y < chin) chin = y;
-      if (y < -0.1) neck = Math.max(neck, Math.hypot(x, z));
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      const z = pos.getZ(i);
+      const e = Math.hypot(x / radius, y / radius, z / radius);
+      worst = Math.max(worst, Math.abs(e - 1));
     }
-    const head = crown - chin;
-    assert.ok(noseY < 0.02 && noseY > -0.08, `nose height ${noseY} is not a face`);
-    assert.ok(noseZ > 0.09, `face depth ${noseZ} is still a ball`);
-    assert.ok(head > 0.2 && head < 0.28, `head height ${head}`);
-    assert.ok(temple / head < 0.46, `temples ${temple} are wide for a head of ${head}`);
-    assert.ok(neck > 0.02 && neck < temple * 0.85, `neck ${neck} vs temple ${temple}`);
+    assert.ok(worst < 1e-4, `skull left the smooth sphere by ${worst}`);
   });
 
   it("keeps the shoulder inside two head-widths and the neck narrow", () => {
@@ -221,8 +206,7 @@ describe("lathe shell", () => {
     for (let i = 0; i < pos.count; i++) {
       v.fromBufferAttribute(pos as THREE.BufferAttribute, i).applyMatrix4(skull.matrixWorld);
       crown = Math.max(crown, v.y);
-      // Chin, not the neck stump. The stump sits just in front of z = 0.05.
-      if (v.z > 0.06 && v.y < chin) chin = v.y;
+      chin = Math.min(chin, v.y);
     }
     let sole = Infinity;
     rig.root.traverse((obj) => {
@@ -249,7 +233,7 @@ describe("lathe shell", () => {
     for (let i = 0; i < spos.count; i++) {
       sv.fromBufferAttribute(spos as THREE.BufferAttribute, i).applyMatrix4(skull.matrixWorld);
       crown = Math.max(crown, sv.y);
-      if (sv.z > 0.06 && sv.y < chin) chin = sv.y;
+      chin = Math.min(chin, sv.y);
     }
     const head = crown - chin;
     let reach = 0;
