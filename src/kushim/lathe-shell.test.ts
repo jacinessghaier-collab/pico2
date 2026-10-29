@@ -74,8 +74,9 @@ describe("lathe shell", () => {
         const localY = v.y - chestY;
         const shell = torsoShellAt(localY);
         const e = (v.x * v.x) / (shell.x * shell.x) + (v.z * v.z) / (shell.z * shell.z);
-        const drawn = !fade || fade.getX(i) >= 0.45;
-        // Below the armpit the whole tube stays outside. In the deltoid only the drawn shell does.
+        const drawn = !fade || fade.getX(i) >= 0.99;
+        // The fade finishes on the shell, so a fully drawn sample cannot sit inside it.
+        // Below the armpit the whole tube stays outside.
         if ((drawn || localY < ARMPIT_Y) && e < 1) {
           inside += 1;
           worst = Math.max(worst, 1 - e);

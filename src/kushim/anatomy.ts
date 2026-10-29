@@ -578,13 +578,14 @@ function centerAtArmpit() {
 
 /**
  * Upper-arm station in chest space.
- * Through the deltoid the tube is seated in the cap (the part inside the shell is
- * not drawn). From the armpit down the center stays put, so the waist leaves a gap.
+ * Through the deltoid the tube is seated on the shell. The fade ends at the
+ * shell, so the crescent outside it stays drawn and the cap has no dark slot.
+ * From the armpit down the center stays put, so the waist leaves a gap.
  */
 export function upperArmStation(t: number) {
   const s = armSample(t);
   const join = hermite(ARMPIT_Y, ARMPIT_Y + 0.08, s.y);
-  const seated = s.torsoHalf + s.r * 0.32;
+  const seated = s.torsoHalf - s.r * 0.2;
   const clear = Math.max(s.torsoHalf + s.r + 0.002, centerAtArmpit());
   const center = seated * join + clear * (1 - join);
   return { r: s.r, y: s.y, torsoHalf: s.torsoHalf, center, outer: center + s.r };
@@ -642,11 +643,11 @@ function shinSection(t: number, a: number, r: number, _side: 1 | -1) {
 function thighSection(t: number, a: number, r: number, side: 1 | -1) {
   const c = Math.cos(a);
   const s = Math.sin(a);
-  const vastus = Math.exp(-((t - 0.28) ** 2) / 0.02);
+  const vastus = Math.exp(-((t - 0.24) ** 2) / 0.035);
   const toKnee = hermite(0.42, 0.9, t);
   const lateral = Math.max(0, c * side);
   const medial = Math.max(0, -c * side);
-  const xMul = 1 + 0.18 * vastus * lateral - 0.22 * toKnee * medial;
+  const xMul = 1 + 0.33 * vastus * lateral - 0.36 * toKnee * medial;
   return { x: c * r * xMul, z: s * r * 0.84 };
 }
 
@@ -697,7 +698,7 @@ function skinFade(x: number, y: number, z: number) {
 function armSkinFade(x: number, y: number, z: number) {
   const shell = torsoShellAt(y);
   const e = (x * x) / (shell.x * shell.x) + (z * z) / (shell.z * shell.z);
-  return hermite(0.78, 1.42, e);
+  return hermite(0.9, 1, e);
 }
 
 type TubeOpts = {
@@ -1124,18 +1125,18 @@ const SHELL_LATHE: Array<[number, number]> = [
   [0.04, -0.4],
   [0.062, -0.34],
   [0.11, -0.3],
-  [0.176, -0.24],
-  [0.184, -0.2],
+  [0.186, -0.24],
+  [0.19, -0.2],
   [0.15, -0.12],
   [0.122, -0.04],
   [0.132, 0.04],
   [0.168, 0.1],
-  [0.19, 0.15],
+  [0.192, 0.15],
   [0.17, 0.2],
   [0.174, 0.24],
   [0.178, 0.258],
   [0.186, 0.276],
-  [0.202, 0.298],
+  [0.192, 0.298],
   [0.178, 0.308],
   [0.148, 0.318],
   [0.11, 0.328],
@@ -1161,9 +1162,7 @@ function shellDepth(y: number) {
 function ellipticTorso() {
   const { position, index } = ellipseRings(SHELL_LATHE.length, 28, (i, _j, c, s) => {
     const [r, y] = SHELL_LATHE[i];
-    const cap = Math.exp(-((y - 0.29) ** 2) / 0.0014);
-    const rx = r * (1 + 0.07 * cap);
-    return [c * rx, y, s * (shellDepth(y) / SHELL_SZ)];
+    return [c * r, y, s * (shellDepth(y) / SHELL_SZ)];
   });
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(position, 3));
