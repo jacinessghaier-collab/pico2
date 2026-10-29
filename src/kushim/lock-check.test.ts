@@ -70,9 +70,8 @@ describe("appearance lock table", () => {
     assert.equal(LOCK.void, "#000000");
     assert.equal(LOCK.strom, "#3AD7FF");
     assert.equal(LOCK.kern, "#E7FBFF");
-    assert.equal("signal" in LOCK, false);
+    assert.equal(LOCK.signal, "#FF3B4E");
     assert.equal("signal" in LOCK_CANON, false);
-    assert.equal(JSON.stringify(LOCK).includes("FF3B4E"), false);
     assert.equal(JSON.stringify(LOCK_CANON).includes("FF3B4E"), false);
     assert.equal(JSON.stringify(LOCK_CANON).includes("FF8A2A"), false);
     assert.equal(JSON.stringify(LOCK_CANON).includes("FFB15A"), false);
@@ -151,15 +150,36 @@ describe("figure lock", () => {
     }
   });
 
-  it("rejects signal red on the shoulder", () => {
+  it("keeps the current figure and rejects signal red on a new scene object", () => {
     const rig = createKushim();
+    const scene = new THREE.Scene();
+    scene.add(rig.root);
     try {
-      const red = new THREE.Color("#FF3B4E");
-      Object.freeze(red);
-      const slot = { value: red };
-      Object.freeze(slot);
-      rig.signal.uniforms.uColor = slot;
-      assert.throws(() => assertRigLock(rig, "build"), /FF3B4E/);
+      assert.equal(
+        `#${(rig.signal.uniforms.uColor.value as THREE.Color).getHexString().toUpperCase()}`,
+        LOCK.signal,
+      );
+      assert.doesNotThrow(() => assertRigLock(rig, "build", scene));
+      assert.doesNotThrow(() => assertRigLock(rig, "live", scene));
+      const added = new THREE.Mesh(
+        new THREE.PlaneGeometry(4, 4),
+        new THREE.MeshBasicMaterial({ color: "#FF3B4E" }),
+      );
+      added.rotation.x = -Math.PI / 2;
+      added.position.y = 0;
+      scene.add(added);
+      assert.throws(
+        () => assertRigLock(rig, "live", scene),
+        (error: unknown) => {
+          loud(error);
+          assert.match((error as Error).message, /FF3B4E/);
+          return true;
+        },
+      );
+      scene.remove(added);
+      added.geometry.dispose();
+      (added.material as THREE.Material).dispose();
+      assert.doesNotThrow(() => assertRigLock(rig, "live", scene));
     } finally {
       rig.dispose();
     }
@@ -701,8 +721,8 @@ describe("stability read", () => {
       assert.equal(LOCK.void, "#000000");
       assert.equal(LOCK.strom, "#3AD7FF");
       assert.equal(LOCK.kern, "#E7FBFF");
-      assert.equal("signal" in LOCK, false);
-      assert.equal(JSON.stringify(LOCK).includes("FF3B4E"), false);
+      assert.equal(LOCK.signal, "#FF3B4E");
+      assert.equal(JSON.stringify(LOCK_CANON).includes("FF3B4E"), false);
       assert.equal(LOCK.proportions.headRadius, 0.105);
       assert.equal(rig.shoulderR.position.x, -LOCK.proportions.shoulderX);
       assert.ok(Object.isFrozen(LOCK));

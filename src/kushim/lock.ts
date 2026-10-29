@@ -1,9 +1,17 @@
-/** Visual lock for 00-ZIEL. No red shoulder knot. Hourly passes may not change these values. */
+/**
+ * Visual lock for 00-ZIEL. The canonical palette has no red shoulder knot.
+ * `signal` is only a compatibility value for the figure that is on main today.
+ */
 
 export const LOCK = {
   void: "#000000",
   strom: "#3AD7FF",
   kern: "#E7FBFF",
+  /**
+   * @deprecated Shoulder knot still drawn by the current figure, same value as main.
+   * Not part of the 00-ZIEL palette. A later figure PR removes the knot.
+   */
+  signal: "#FF3B4E",
   /** Inner muscle and nerve mesh. The glass shell stays strom. */
   filament: "#D4F04A",
   filamentKern: "#F7FFC2",

@@ -4,6 +4,7 @@
  * jaw drop, gaze, blink) is the envelope from tickKushim and lipsync —
  * update those constants in the same change.
  * Silhouette, palette, and the void stay put. 00-ZIEL has no red shoulder knot.
+ * LOCK.signal stays the main value so the current figure is unchanged. It is not canon.
  * A subtle floor reflection, foot glow, and a three-quarter camera are allowed.
  * The re-read also rejects a swapped shader or geometry, a reparented or hidden
  * part, a rolled or upside-down camera, and a scene that covers the void.
@@ -208,13 +209,41 @@ function mustHex(color: THREE.Color, expected: string, de: string, en: string) {
   }
 }
 
-/** Shoulder colors stay sealed. 00-ZIEL has no signal red. */
+/** Shoulder colors on the current figure stay sealed, including the deprecated signal. */
 function expectSealedColor(color: THREE.Color, de: string, en: string) {
   if (!color?.isColor) breach(`${de} fehlt.`, `${en} is missing.`);
   if (!Object.isFrozen(color)) breach(`${de} ist nicht eingefroren.`, `${en} is not frozen.`);
-  if (hexOf(color) === "#FF3B4E") {
-    breach(`${de} ist Signalrot #FF3B4E.`, `${en} is signal red #FF3B4E.`);
-  }
+}
+
+const SIGNAL_RED = "#FF3B4E";
+
+function colorIsSignalRed(color: unknown): boolean {
+  return (
+    Boolean((color as THREE.Color | undefined)?.isColor) &&
+    hexOf(color as THREE.Color) === SIGNAL_RED
+  );
+}
+
+function usesSignalRed(root: THREE.Object3D): boolean {
+  let found = false;
+  root.traverse((node) => {
+    if (found) return;
+    for (const material of materialsOf(node)) {
+      if (colorIsSignalRed((material as THREE.MeshBasicMaterial).color)) {
+        found = true;
+        return;
+      }
+      const shader = material as THREE.ShaderMaterial;
+      if (!shader.isShaderMaterial || !shader.uniforms) continue;
+      for (const slot of Object.values(shader.uniforms)) {
+        if (colorIsSignalRed((slot as { value?: unknown }).value)) {
+          found = true;
+          return;
+        }
+      }
+    }
+  });
+  return found;
 }
 
 function markData(obj: THREE.Object3D): Mark {
@@ -289,8 +318,25 @@ export function assertLockTable() {
     breach("Die Hüllenwerte sind nicht eingefroren.", "The shell values are not frozen.");
   }
   const top = Object.keys(LOCK).sort().join(",");
-  if (top !== "aura,filament,filamentKern,glass,ground,kern,proportions,strom,void") {
+  if (top !== "aura,filament,filamentKern,glass,ground,kern,proportions,signal,strom,void") {
     breach("LOCK hat andere Schlüssel.", "LOCK has different keys.");
+  }
+  if (LOCK.signal !== SIGNAL_RED) {
+    breach(
+      "Das veraltete Schultersignal weicht von main ab.",
+      "The deprecated shoulder signal drifted from main.",
+    );
+  }
+  if (
+    "signal" in LOCK_CANON ||
+    "signalNerveCore" in LOCK_CANON ||
+    "signalCore" in LOCK_CANON ||
+    JSON.stringify(LOCK_CANON).toUpperCase().includes(SIGNAL_RED.slice(1))
+  ) {
+    breach(
+      "Die Zieltabelle enthält Signalrot #FF3B4E.",
+      "The target table contains signal red #FF3B4E.",
+    );
   }
   const colors = ["void", "strom", "kern", "filament", "filamentKern"] as const;
   for (const key of colors) {
@@ -1084,7 +1130,14 @@ function sceneIntruder(obj: THREE.Object3D): { de: string; en: string } {
 
 function auditSceneSeat(rig: LockedRig, scene: { children: readonly THREE.Object3D[] }) {
   for (const child of scene.children) {
-    if (child === rig.root || isFloorReflection(child)) continue;
+    if (child === rig.root) continue;
+    if (usesSignalRed(child)) {
+      breach(
+        "Signalrot #FF3B4E gehört nicht ins Zielbild.",
+        "Signal red #FF3B4E is not part of the target.",
+      );
+    }
+    if (isFloorReflection(child)) continue;
     const intruder = sceneIntruder(child);
     breach(intruder.de, intruder.en);
   }
