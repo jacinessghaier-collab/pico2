@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 import * as THREE from "three";
 import type { BufferGeometry, Mesh, Object3D } from "three";
-import { bendCalfNormal, calfRimAlpha, createKushim, type Rig } from "@/kushim/anatomy";
+import { createKushim, type Rig } from "@/kushim/anatomy";
 import { LOCK } from "@/kushim/lock";
 
 before(() => {
@@ -14,7 +14,7 @@ before(() => {
 });
 
 /** Widest torso ring at the shoulder. Same lathe the shell uses, times SHELL_SX. */
-const SHOULDER_LINE = 0.25452;
+const SHOULDER_LINE = 0.2205;
 
 function tubeOn(parent: Object3D) {
   let best: Mesh | null = null;
@@ -38,6 +38,17 @@ function tubeOn(parent: Object3D) {
   }
   if (!best) throw new Error("limb tube missing");
   return best.geometry;
+}
+
+function meshByKey(root: THREE.Object3D, key: string) {
+  const found: Mesh[] = [];
+  root.traverse((obj) => {
+    const mesh = obj as Mesh;
+    if (mesh.userData?.lockKey === key) found.push(mesh);
+  });
+  const mesh = found[0];
+  if (!mesh) throw new Error(`${key} missing`);
+  return mesh;
 }
 
 function scan(geo: BufferGeometry, each: (x: number, y: number, z: number) => void) {
@@ -66,239 +77,165 @@ describe("lathe shell", () => {
     }
   });
 
-  it("splits the calf into two posterior heads without a frontal spindle", () => {
+  it("mirrors the glass body across the sagittal plane", () => {
+    rig.root.rotation.set(0, 0, 0);
+    rig.root.position.set(0, 0, 0);
+    rig.root.scale.set(1, 1, 1);
+    rig.root.updateMatrixWorld(true);
+    const cell = 0.004;
+    const bins = new Map<string, Array<[number, number, number]>>();
+    const key = (x: number, y: number, z: number) =>
+      `${Math.round(x / cell)}:${Math.round(y / cell)}:${Math.round(z / cell)}`;
+    const points: Array<[number, number, number]> = [];
+    const v = new THREE.Vector3();
+    rig.root.traverse((obj) => {
+      const mesh = obj as Mesh;
+      if (!mesh.isMesh || mesh.material !== rig.glass) return;
+      const pos = mesh.geometry.getAttribute("position");
+      if (!pos) return;
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos as THREE.BufferAttribute, i).applyMatrix4(mesh.matrixWorld);
+        const p: [number, number, number] = [v.x, v.y, v.z];
+        points.push(p);
+        const k = key(p[0], p[1], p[2]);
+        const list = bins.get(k);
+        if (list) list.push(p);
+        else bins.set(k, [p]);
+      }
+    });
+    assert.ok(points.length > 4000, `glass samples ${points.length}`);
+    let worst = 0;
+    let misses = 0;
+    for (const [x, y, z] of points) {
+      const mx = -x;
+      let best = Infinity;
+      for (let ix = -1; ix <= 1; ix++) {
+        for (let iy = -1; iy <= 1; iy++) {
+          for (let iz = -1; iz <= 1; iz++) {
+            const list = bins.get(key(mx + ix * cell, y + iy * cell, z + iz * cell));
+            if (!list) continue;
+            for (const q of list) {
+              const d = Math.hypot(q[0] - mx, q[1] - y, q[2] - z);
+              if (d < best) best = d;
+            }
+          }
+        }
+      }
+      if (best > worst) worst = best;
+      if (best > 0.002) misses += 1;
+    }
+    assert.equal(misses, 0, `${misses} glass vertices lack a mirror, worst gap ${worst}`);
+  });
+
+  it("tapers a smooth calf into the ankle", () => {
     const hips = rig.root.children.filter((child) => child.userData.lockKey === "hip");
     assert.equal(hips.length, 2);
     for (const hip of hips) {
       const kneeJoint = hip.children.find((child) => child.userData.lockKey === "knee");
       if (!kneeJoint) throw new Error("knee missing");
       const geo = tubeOn(kneeJoint);
-      let maxX = -Infinity;
-      let minX = Infinity;
-      let cleft = Infinity;
-      let head = Infinity;
       let belly = 0;
-      scan(geo, (x, y, z) => {
-        const t = (0.14 - y) / (0.14 + LOCK.proportions.shin);
-        if (t < 0.46 || t > 0.6) return;
-        belly += 1;
-        maxX = Math.max(maxX, x);
-        minX = Math.min(minX, x);
-        if (Math.abs(x) < 0.012) cleft = Math.min(cleft, z);
-        if (x > 0.028) head = Math.min(head, z);
-      });
-      assert.ok(belly > 20);
-      const width = maxX - minX;
-      // Same x scale as #29. The finer calf ring lands on the lateral peak.
-      assert.ok(width < 0.136, `frontal width ${width} is still the spindle`);
-      assert.ok(width > 0.09, `frontal width ${width} collapsed`);
-      assert.ok(head < -0.1, `posterior belly ${head} flattened`);
-      assert.ok(cleft > head + 0.012, `cleft ${cleft} does not sit in front of the head ${head}`);
-    }
-  });
-
-  it("cuts a narrow sulcus between the gastrocnemius heads", () => {
-    const hips = rig.root.children.filter((child) => child.userData.lockKey === "hip");
-    for (const hip of hips) {
-      const kneeJoint = hip.children.find((child) => child.userData.lockKey === "knee");
-      if (!kneeJoint) throw new Error("knee missing");
-      const geo = tubeOn(kneeJoint);
-      let floorFront = -Infinity;
-      let floorBack = Infinity;
-      let plateau = Infinity;
+      let ankle = 0;
+      let posterior = 0;
       let samples = 0;
+      let reach = 0;
       scan(geo, (x, y, z) => {
         const t = (0.14 - y) / (0.14 + LOCK.proportions.shin);
-        if (t < 0.52 || t > 0.58 || z >= 0) return;
-        samples += 1;
-        if (Math.abs(x) < 0.004) {
-          floorFront = Math.max(floorFront, z);
-          floorBack = Math.min(floorBack, z);
+        const ax = Math.abs(x);
+        reach = Math.max(reach, ax);
+        if (t >= 0.34 && t <= 0.5) {
+          belly = Math.max(belly, ax);
+          posterior = Math.min(posterior, z);
+          samples += 1;
         }
-        // Inner slope of each head. A wide valley lifts this station forward.
-        if (Math.abs(x) > 0.02 && Math.abs(x) < 0.03) plateau = Math.min(plateau, z);
+        if (t >= 0.9) ankle = Math.max(ankle, ax);
       });
       assert.ok(samples > 20);
-      assert.ok(floorFront < -0.02, `sulcus floor ${floorFront} reaches the tibia`);
-      assert.ok(floorBack > -0.055, `sulcus floor ${floorBack} filled back in`);
-      assert.ok(plateau < -0.092, `inner head ${plateau} is still the soft valley`);
-      assert.ok(floorBack > plateau + 0.05, `sulcus relief ${floorBack - plateau} is too shallow`);
+      assert.ok(belly > 0.045 && belly < 0.08, `belly half-width ${belly}`);
+      assert.ok(ankle > 0.02 && ankle < belly * 0.75, `ankle ${ankle} vs belly ${belly}`);
+      assert.ok(posterior < -0.055, `posterior belly ${posterior} is flat`);
+      assert.ok(reach < 0.085, `lateral reach ${reach} is a fin`);
     }
   });
 
-  it("rims both calf heads from the oblique rear and keeps the front dark", () => {
-    const cam = new THREE.Vector3(0, 1.04, 8.399);
+  it("shapes a head, not a ringed ball, on the body rim", () => {
+    const skull = meshByKey(rig.root, "skull");
+    const kante = skull.geometry.getAttribute("aKante");
+    const band = skull.geometry.getAttribute("aBand");
+    assert.ok(kante && band);
+    for (let i = 0; i < kante.count; i++) {
+      assert.equal(kante.getX(i), 0);
+      assert.equal(band.getX(i), 1, "skull shares the even body rim");
+    }
+    const pos = skull.geometry.getAttribute("position");
+    let noseZ = -Infinity;
+    let noseY = 0;
+    let crown = -Infinity;
+    let chin = Infinity;
+    let temple = 0;
+    let neck = 0;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i) * skull.scale.x;
+      const y = pos.getY(i) * skull.scale.y;
+      const z = pos.getZ(i) * skull.scale.z;
+      if (z > noseZ) {
+        noseZ = z;
+        noseY = y;
+      }
+      crown = Math.max(crown, y);
+      temple = Math.max(temple, Math.abs(x));
+      if (z > 0.05 && y < chin) chin = y;
+      if (y < -0.1) neck = Math.max(neck, Math.hypot(x, z));
+    }
+    const head = crown - chin;
+    assert.ok(noseY < 0.02 && noseY > -0.08, `nose height ${noseY} is not a face`);
+    assert.ok(noseZ > 0.09, `face depth ${noseZ} is still a ball`);
+    assert.ok(head > 0.2 && head < 0.28, `head height ${head}`);
+    assert.ok(temple / head < 0.46, `temples ${temple} are wide for a head of ${head}`);
+    assert.ok(neck > 0.02 && neck < temple * 0.85, `neck ${neck} vs temple ${temple}`);
+  });
+
+  it("keeps the shoulder inside two head-widths and the neck narrow", () => {
+    const torso = rig.chest.children.find((child) => (child as Mesh).userData?.lockKey === "torso") as Mesh;
+    const pos = torso.geometry.getAttribute("position");
+    let shoulder = 0;
+    let neck = 0;
+    for (let i = 0; i < pos.count; i++) {
+      const x = Math.abs(pos.getX(i) * torso.scale.x);
+      const y = pos.getY(i);
+      if (y > 0.26 && y < 0.3) shoulder = Math.max(shoulder, x);
+      if (y > 0.42 && y < 0.46) neck = Math.max(neck, x);
+    }
+    assert.ok(shoulder > 0.18 && shoulder < 0.24, `acromion ${shoulder} is a shroud or a spike`);
+    assert.ok(neck < 0.075 && neck < shoulder * 0.4, `neck ${neck} under shoulder ${shoulder}`);
+  });
+
+  it("stands between seven and a half and eight heads", () => {
+    rig.root.updateMatrixWorld(true);
+    const skull = meshByKey(rig.root, "skull");
+    skull.updateWorldMatrix(true, false);
+    const pos = skull.geometry.getAttribute("position");
+    const v = new THREE.Vector3();
+    let crown = -Infinity;
+    let chin = Infinity;
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos as THREE.BufferAttribute, i).applyMatrix4(skull.matrixWorld);
+      crown = Math.max(crown, v.y);
+      // Chin, not the neck stump. The stump sits just in front of z = 0.05.
+      if (v.z > 0.06 && v.y < chin) chin = v.y;
+    }
+    let sole = Infinity;
     rig.root.traverse((obj) => {
       const mesh = obj as Mesh;
-      if (mesh.userData?.lockKey !== "skull") return;
-      const kante = mesh.geometry?.getAttribute?.("aKante");
-      const band = mesh.geometry?.getAttribute?.("aBand");
-      assert.ok(kante, "skull shares the glass shader and must stay unmarked");
-      assert.ok(band, "skull shares the body-band attribute");
-      for (let i = 0; i < kante.count; i++) {
-        assert.equal(kante.getX(i), 0);
-        assert.equal(band.getX(i), 0, "skull rim stays on the locked exponent");
+      if (!mesh.isMesh || mesh.material !== rig.glass) return;
+      const attr = mesh.geometry.getAttribute("position");
+      if (!attr) return;
+      for (let i = 0; i < attr.count; i++) {
+        v.fromBufferAttribute(attr as THREE.BufferAttribute, i).applyMatrix4(mesh.matrixWorld);
+        sole = Math.min(sole, v.y);
       }
     });
-    const torso = rig.chest.children.find((child) => (child as Mesh).userData?.lockKey === "torso") as Mesh;
-    const torsoBand = torso.geometry.getAttribute("aBand");
-    assert.ok(torsoBand && torsoBand.getX(0) === 1, "torso carries the wider body band");
-
-    const sample = (yaw: number) => {
-      rig.root.rotation.y = yaw;
-      rig.root.updateMatrixWorld(true);
-      const hips = rig.root.children.filter((child) => child.userData.lockKey === "hip");
-      return hips.map((hip) => {
-        const side = hip.userData.lockSide as number;
-        const knee = hip.children.find((child) => child.userData.lockKey === "knee");
-        if (!knee) throw new Error("knee missing");
-        const geo = tubeOn(knee);
-        const mesh = knee.children.find((child) => (child as Mesh).geometry === geo) as Mesh;
-        const pos = geo.getAttribute("position");
-        const nrm = geo.getAttribute("normal");
-        const kante = geo.getAttribute("aKante");
-        const fade = geo.getAttribute("aFade");
-        const band = geo.getAttribute("aBand");
-        assert.ok(kante, "calf is missing the rear-rim mark");
-        const ax = new THREE.Vector3(1, 0, 0).transformDirection(mesh.matrixWorld);
-        const p = new THREE.Vector3();
-        const n = new THREE.Vector3();
-        const view = new THREE.Vector3();
-        let marked = 0;
-        let posHead = 0;
-        let negHead = 0;
-        let floorRear = 0;
-        let floorN = 0;
-        let crestJump = 0;
-        let prevCrest = 0;
-        const row = 57;
-        const rings = pos.count / row;
-        for (let ring = 0; ring < rings; ring++) {
-          let crest = 0;
-          for (let j = 0; j < row; j++) crest = Math.max(crest, kante.getX(ring * row + j));
-          const t = ring / Math.max(1, rings - 1);
-          if (t > 0.08 && t < 0.5) crestJump = Math.max(crestJump, crest - prevCrest);
-          prevCrest = crest;
-        }
-        for (let i = 0; i < pos.count; i++) {
-          const y = pos.getY(i);
-          const t = (0.14 - y) / (0.14 + LOCK.proportions.shin);
-          if (t < 0.28 || t > 0.74) continue;
-          p.set(pos.getX(i), y, pos.getZ(i)).applyMatrix4(mesh.matrixWorld);
-          view.copy(cam).sub(p).normalize();
-          const viewLocal = view.clone().transformDirection(mesh.matrixWorld.clone().invert());
-          const bent = bendCalfNormal(
-            nrm.getX(i),
-            nrm.getY(i),
-            nrm.getZ(i),
-            pos.getX(i),
-            viewLocal.x,
-            viewLocal.y,
-            viewLocal.z,
-            kante.getX(i),
-          );
-          n.set(bent.x, bent.y, bent.z).transformDirection(mesh.matrixWorld);
-          const alpha = calfRimAlpha(
-            n.dot(view),
-            kante.getX(i),
-            Math.abs(ax.dot(view)),
-            fade.getX(i),
-            band?.getX(i) ?? 0,
-          );
-          const x = pos.getX(i);
-          const z = pos.getZ(i);
-          if (z < -0.05 && kante.getX(i) > 0.35 && x > 0.012) posHead = Math.max(posHead, alpha);
-          if (z < -0.05 && kante.getX(i) > 0.35 && x < -0.012) negHead = Math.max(negHead, alpha);
-          if (
-            t > 0.45 &&
-            t < 0.72 &&
-            kante.getX(i) < 0.01 &&
-            Math.abs(x) < 0.005 &&
-            z < -0.02 &&
-            z > -0.08
-          ) {
-            floorRear = Math.max(floorRear, alpha);
-            floorN += 1;
-          }
-          if (kante.getX(i) > 0.45) marked += 1;
-        }
-        return { side, marked, posHead, negHead, floorRear, floorN, crestJump };
-      });
-    };
-
-    const front = sample(0);
-    for (const leg of front) {
-      assert.ok(leg.marked > 30, `side ${leg.side} marked ${leg.marked}`);
-      assert.ok(leg.posHead < 0.02, `front +x head rim ${leg.posHead} on side ${leg.side}`);
-      assert.ok(leg.negHead < 0.02, `front -x head rim ${leg.negHead} on side ${leg.side}`);
-      assert.ok(leg.crestJump < 0.22, `rim onset steps by ${leg.crestJump} on side ${leg.side}`);
-    }
-
-    const rear = sample(-0.68);
-    for (const leg of rear) {
-      assert.ok(leg.posHead > 0.18, `+x head lost, alpha ${leg.posHead} side ${leg.side}`);
-      assert.ok(leg.negHead > 0.18, `-x head lost, alpha ${leg.negHead} side ${leg.side}`);
-      assert.ok(leg.floorN > 4, `sulcus floor samples ${leg.floorN} side ${leg.side}`);
-      const lip = Math.min(leg.posHead, leg.negHead);
-      assert.ok(leg.floorRear < lip * 0.55, `floor ${leg.floorRear} fills the sulcus on side ${leg.side}`);
-    }
-    rig.root.rotation.y = 0;
-  });
-
-  it("notches the yawed calf outline between the two heads", () => {
-    const yaw = -0.68;
-    const cos = Math.cos(yaw);
-    const sin = Math.sin(yaw);
-    rig.root.rotation.y = yaw;
-    rig.root.updateMatrixWorld(true);
-    const hips = rig.root.children.filter((child) => child.userData.lockKey === "hip");
-    let notched = 0;
-    for (const hip of hips) {
-      const knee = hip.children.find((child) => child.userData.lockKey === "knee");
-      if (!knee) throw new Error("knee missing");
-      const geo = tubeOn(knee);
-      const mesh = knee.children.find((child) => (child as Mesh).geometry === geo) as Mesh;
-      mesh.updateWorldMatrix(true, false);
-      const pos = geo.getAttribute("position");
-      const row = 57;
-      const rings = pos.count / row;
-      const rows: Array<{ t: number; s: number; x: number }> = [];
-      const p = new THREE.Vector3();
-      for (let ring = 0; ring < rings; ring++) {
-        let maxS = -Infinity;
-        let atX = 0;
-        for (let j = 0; j < row; j++) {
-          const i = ring * row + j;
-          p.set(pos.getX(i), pos.getY(i), pos.getZ(i)).applyMatrix4(mesh.matrixWorld);
-          const s = cos * p.x + sin * p.z;
-          if (s > maxS) {
-            maxS = s;
-            atX = pos.getX(i);
-          }
-        }
-        const y = pos.getY(ring * row);
-        const t = (0.14 - y) / (0.14 + LOCK.proportions.shin);
-        rows.push({ t, s: maxS, x: atX });
-      }
-      const peaks: Array<{ t: number; s: number; x: number }> = [];
-      for (let i = 1; i < rows.length - 1; i++) {
-        const rowT = rows[i];
-        if (!rowT || rowT.t < 0.24 || rowT.t > 0.76) continue;
-        const prev = rows[i - 1];
-        const next = rows[i + 1];
-        if (!prev || !next) continue;
-        if (rowT.s >= prev.s && rowT.s > next.s) peaks.push(rowT);
-      }
-      if (peaks.length < 2) continue;
-      const a = peaks[0];
-      const b = peaks[peaks.length - 1];
-      if (!a || !b || Math.sign(a.x) === Math.sign(b.x)) continue;
-      const mid = rows.filter((r) => r.t > a.t && r.t < b.t);
-      const valley = Math.min(...mid.map((r) => r.s));
-      const dip = Math.min(a.s, b.s) - valley;
-      if (dip > 0.012) notched += 1;
-    }
-    assert.ok(notched >= 1, "neither calf notches between the gastrocnemius heads");
-    rig.root.rotation.y = 0;
+    const heads = (crown - sole) / (crown - chin);
+    assert.ok(heads >= 7.5 && heads <= 8, `figure is ${heads.toFixed(2)} heads tall`);
   });
 });

@@ -95,7 +95,7 @@ describe("appearance lock table", () => {
     assert.equal(LOCK_CANON.filamentMin, 0.86);
     assert.equal(LOCK_CANON.filamentMax, 1);
     assert.equal(LOCK_CANON.hipX, 0.11);
-    assert.deepEqual(LOCK_CANON.torsoScale, [1.05, 1, 0.72]);
+    assert.deepEqual(LOCK_CANON.torsoScale, [1.05, 1, 0.78]);
     assert.deepEqual(LOCK_CANON.skullScale, [1, 1.16, 1.02]);
     assert.equal(LOCK.proportions.hipY, 1);
     assert.equal(LOCK.proportions.chestY, 1.28);

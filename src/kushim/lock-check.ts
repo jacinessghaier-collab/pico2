@@ -73,7 +73,7 @@ export const LOCK_CANON = {
     headLocalY: 0.48,
   },
   hipX: 0.11,
-  torsoScale: [1.05, 1, 0.72],
+  torsoScale: [1.05, 1, 0.78],
   skullScale: [1, 1.16, 1.02],
   glassBoost: 1,
   brightBoost: 0,
