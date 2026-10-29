@@ -14,7 +14,7 @@ before(() => {
 });
 
 /** Widest torso ring at the shoulder. Same lathe the shell uses, times SHELL_SX. */
-const SHOULDER_LINE = 0.2205;
+const SHOULDER_LINE = 0.1995;
 
 function tubeOn(parent: Object3D) {
   let best: Mesh | null = null;
