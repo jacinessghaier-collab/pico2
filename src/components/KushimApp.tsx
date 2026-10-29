@@ -4,6 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import type { ComponentType, FormEvent, RefObject } from "react";
 import { BildzeitReadout } from "@/kushim/BildzeitReadout";
 import { isRepairRequest, shapeReply, textForLeo, trimInterrupted } from "@/kushim/dialogue";
+import {
+  cycleManifoldMode,
+  manifoldModeLabel,
+  readManifoldMode,
+  type ManifoldMode,
+  type ManifoldViewMode,
+} from "@/kushim/manifold-smoke";
 import { fallbackReply } from "@/kushim/fallback";
 import type { Gesture } from "@/kushim/lock";
 import type { Pose } from "@/kushim/motion";
@@ -76,6 +83,10 @@ export function KushimApp() {
   const recRef = useRef<Rec | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const [Scene, setScene] = useState<ComponentType<{ poseRef: RefObject<Pose> }> | null>(null);
+  const [Overlay, setOverlay] = useState<ComponentType<{
+    mode: ManifoldViewMode;
+    onReport: (line: string) => void;
+  }> | null>(null);
   const [msgs, setMsgs] = useState<Turn[]>([]);
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false);
@@ -91,9 +102,13 @@ export function KushimApp() {
   const [reduced, setReduced] = useState(false);
   const [booted, setBooted] = useState(false);
   const [note, setNote] = useState("");
+  const [manifold, setManifold] = useState<ManifoldMode>("off");
+  const [manifoldNote, setManifoldNote] = useState("");
 
   useEffect(() => {
     void import("@/kushim/KushimScene").then((mod) => setScene(() => mod.KushimScene));
+    void import("@/kushim/ManifoldOverlay").then((mod) => setOverlay(() => mod.ManifoldOverlay));
+    setManifold(readManifoldMode(window.location.search));
     const loaded = loadThread();
     threadRef.current = loaded;
     setMsgs(loaded);
@@ -295,6 +310,21 @@ export function KushimApp() {
         <div className="pointer-events-auto flex items-center gap-2">
           <button
             type="button"
+            aria-pressed={manifold !== "off"}
+            aria-label="Manifold-Ansicht"
+            onClick={() =>
+              setManifold((mode) => {
+                const next = cycleManifoldMode(mode);
+                if (next === "off") setManifoldNote("");
+                return next;
+              })
+            }
+            className="h-11 rounded-full border border-line px-4 text-sm text-strom"
+          >
+            {manifoldModeLabel(manifold)}
+          </button>
+          <button
+            type="button"
             aria-pressed={leo}
             disabled={!voiceOn}
             onClick={() => setLeo((value) => !value)}
@@ -314,8 +344,20 @@ export function KushimApp() {
         </div>
       </header>
 
-      <div className="absolute inset-0">{Scene ? <Scene poseRef={poseRef} /> : null}</div>
+      <div className="absolute inset-0">
+        {Scene ? <Scene poseRef={poseRef} /> : null}
+        {manifold !== "off" && Overlay ? (
+          <div className="pointer-events-none absolute inset-0">
+            <Overlay mode={manifold} onReport={setManifoldNote} />
+          </div>
+        ) : null}
+      </div>
       <BildzeitReadout />
+      {manifoldNote ? (
+        <p className="pointer-events-none absolute top-40 left-4 z-10 max-w-xs text-xs text-mist md:top-44 md:left-6">
+          {manifoldNote}
+        </p>
+      ) : null}
 
       <div
         ref={scroller}
