@@ -139,7 +139,7 @@ export function splitSentences(text: string): string[] {
 }
 
 function bare(word: string): string {
-  return word.toLowerCase().replace(/^[„"«(\[]+|[»"')\],:;!.?…]+$/gu, "");
+  return word.toLowerCase().replace(/^[„"«([]+|[»"')\],:;!.?…]+$/gu, "");
 }
 
 function isFunction(word: string): boolean {
