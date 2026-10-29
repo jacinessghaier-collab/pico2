@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
-import { Vector3, type BufferGeometry, type Mesh, type Object3D } from "three";
+import { Raycaster, Vector3, type BufferGeometry, type Mesh, type Object3D } from "three";
 import { createKushim, SHOULDER_LINE, type Rig } from "@/kushim/anatomy";
 import { LOCK } from "@/kushim/lock";
 
@@ -195,6 +195,56 @@ describe("filament fit", () => {
       }
       assert.ok(worst <= 0, `upper-arm centerline leaves the tube by ${worst}`);
       assert.ok(world <= SHOULDER_LINE + 1e-3, `upper-arm filament at ${world} past the shoulder line`);
+    }
+  });
+
+  it("keeps hand filaments inside the hand glass", () => {
+    rig.root.updateMatrixWorld(true);
+    const ray = new Raycaster();
+    const dirs = [
+      [1, 0, 0.137],
+      [-0.71, 0, 0.7],
+      [0.3, 0, -0.95],
+      [-0.9, 0, -0.43],
+      [0.62, 0.02, 0.78],
+    ].map(([x, y, z]) => new Vector3(x, y, z).normalize());
+    const insideMesh = (point: Vector3, mesh: Mesh) => {
+      let votes = 0;
+      for (const dir of dirs) {
+        ray.set(point, dir);
+        const distances: number[] = [];
+        for (const hit of ray.intersectObject(mesh, false)) {
+          if (!distances.some((d) => Math.abs(d - hit.distance) < 1e-6)) {
+            distances.push(hit.distance);
+          }
+        }
+        if (distances.length % 2 === 1) votes += 1;
+      }
+      return votes >= 3;
+    };
+    for (const wrist of [rig.wristL, rig.wristR]) {
+      const glass: Mesh[] = [];
+      wrist.traverse((obj) => {
+        const mesh = obj as Mesh;
+        if (mesh.isMesh && mesh.material === rig.glass) glass.push(mesh);
+      });
+      const seen = new Set<string>();
+      const nerves: Vector3[] = [];
+      for (const child of wrist.children) {
+        const mesh = child as Mesh;
+        if (!mesh.isMesh || mesh.material !== rig.nerve) continue;
+        const pos = mesh.geometry.getAttribute("position");
+        for (let i = 0; i < pos.count; i++) {
+          const point = new Vector3().fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+          const key = `${point.x.toFixed(5)}:${point.y.toFixed(5)}:${point.z.toFixed(5)}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          nerves.push(point);
+        }
+      }
+      const outside = nerves.filter((point) => !glass.some((mesh) => insideMesh(point, mesh)));
+      assert.equal(nerves.length, 54, `hand centerlines ${nerves.length}`);
+      assert.equal(outside.length, 0, `${outside.length} hand filaments outside the glass`);
     }
   });
 
