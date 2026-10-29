@@ -2045,11 +2045,9 @@ function calfFrame(t: number, side: 1 | -1) {
 
   let lat = { x: cx + side * r * 0.25, z: cz - r * 0.35 };
   let med = { x: cx - side * r * 0.22, z: cz - r * 0.4 };
-  let groove = { x: cx, z: cz - r * 0.18 };
   let latZ = Infinity;
   let medZ = Infinity;
   let grooveZ = -Infinity;
-  let grooveFound = false;
   for (const p of pts) {
     if (p.z > cz) continue;
     const outward = side * (p.x - cx);
@@ -2061,15 +2059,10 @@ function calfFrame(t: number, side: 1 | -1) {
       medZ = p.z;
       med = p;
     }
-    if (Math.abs(p.x - cx) <= 0.014 && p.z > grooveZ) {
-      grooveZ = p.z;
-      groove = p;
-      grooveFound = true;
-    }
+    if (Math.abs(p.x - cx) <= 0.014 && p.z > grooveZ) grooveZ = p.z;
   }
-  if (!grooveFound) groove = { x: cx, z: cz - r * 0.16 };
   // Mirrored candidates tie on z. Center the lane so both calves mirror.
-  else groove = { x: cx, z: groove.z };
+  const groove = { x: cx, z: Number.isFinite(grooveZ) ? grooveZ : cz - r * 0.16 };
 
   return {
     cx,
