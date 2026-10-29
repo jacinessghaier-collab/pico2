@@ -7,7 +7,8 @@ describe("visual lock", () => {
     assert.equal(LOCK.void, "#000000");
     assert.equal(LOCK.strom, "#3AD7FF");
     assert.equal(LOCK.kern, "#E7FBFF");
-    assert.equal(LOCK.signal, "#FF3B4E");
+    assert.equal("signal" in LOCK, false);
+    assert.equal(JSON.stringify(LOCK).includes("FF3B4E"), false);
     assert.equal(LOCK.filament, "#D4F04A");
     assert.equal(LOCK.filamentKern, "#F7FFC2");
     assert.equal(LOCK.glass.fill, 0.004);
@@ -33,14 +34,9 @@ describe("visual lock", () => {
       headRadius: 0.105,
       headLocalY: 0.48,
     });
-    assert.deepEqual([...GESTURES], [
-      "idle",
-      "listen",
-      "think",
-      "speak",
-      "explain",
-      "acknowledge",
-      "empathize",
-    ]);
+    assert.deepEqual(
+      [...GESTURES],
+      ["idle", "listen", "think", "speak", "explain", "acknowledge", "empathize"],
+    );
   });
 });

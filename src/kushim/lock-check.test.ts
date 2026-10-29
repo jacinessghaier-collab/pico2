@@ -70,7 +70,12 @@ describe("appearance lock table", () => {
     assert.equal(LOCK.void, "#000000");
     assert.equal(LOCK.strom, "#3AD7FF");
     assert.equal(LOCK.kern, "#E7FBFF");
-    assert.equal(LOCK.signal, "#FF3B4E");
+    assert.equal("signal" in LOCK, false);
+    assert.equal("signal" in LOCK_CANON, false);
+    assert.equal(JSON.stringify(LOCK).includes("FF3B4E"), false);
+    assert.equal(JSON.stringify(LOCK_CANON).includes("FF3B4E"), false);
+    assert.equal(JSON.stringify(LOCK_CANON).includes("FF8A2A"), false);
+    assert.equal(JSON.stringify(LOCK_CANON).includes("FFB15A"), false);
     assert.equal(LOCK.filament, "#D4F04A");
     assert.equal(LOCK.filamentKern, "#F7FFC2");
     assert.equal(LOCK_CANON.void, "#000000");
@@ -86,11 +91,8 @@ describe("appearance lock table", () => {
     assert.equal(LOCK_CANON.brightBoost, 0);
     assert.equal(LOCK_CANON.strom, "#3AD7FF");
     assert.equal(LOCK_CANON.kern, "#E7FBFF");
-    assert.equal(LOCK_CANON.signal, "#FF3B4E");
     assert.equal(LOCK_CANON.filament, "#D4F04A");
     assert.equal(LOCK_CANON.filamentKern, "#F7FFC2");
-    assert.equal(LOCK_CANON.signalNerveCore, "#FF8A2A");
-    assert.equal(LOCK_CANON.signalCore, "#FFB15A");
     assert.equal(LOCK_CANON.filamentMin, 0.86);
     assert.equal(LOCK_CANON.filamentMax, 1);
     assert.equal(LOCK_CANON.hipX, 0.11);
@@ -144,6 +146,20 @@ describe("figure lock", () => {
         if (geo?.type === "SphereGeometry") spheres += 1;
       });
       assert.equal(spheres, 5);
+    } finally {
+      rig.dispose();
+    }
+  });
+
+  it("rejects signal red on the shoulder", () => {
+    const rig = createKushim();
+    try {
+      const red = new THREE.Color("#FF3B4E");
+      Object.freeze(red);
+      const slot = { value: red };
+      Object.freeze(slot);
+      rig.signal.uniforms.uColor = slot;
+      assert.throws(() => assertRigLock(rig, "build"), /FF3B4E/);
     } finally {
       rig.dispose();
     }
@@ -406,13 +422,85 @@ describe("figure lock", () => {
 
       const floor = new THREE.Mesh(
         new THREE.PlaneGeometry(4, 4),
-        new THREE.MeshBasicMaterial({ color: "#333333" }),
+        new THREE.MeshBasicMaterial({ color: "#1a2428" }),
       );
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.y = 0;
       scene.add(floor);
-      assert.throws(() => assertRigLock(rig, "live", scene), loud);
+      assert.doesNotThrow(() => assertRigLock(rig, "live", scene));
+      const glow = new THREE.Mesh(
+        new THREE.CircleGeometry(LOCK.ground.radius, 24),
+        new THREE.MeshBasicMaterial({ color: LOCK.strom, transparent: true, opacity: 0.2 }),
+      );
+      glow.rotation.x = -Math.PI / 2;
+      glow.position.y = LOCK.ground.y;
+      scene.add(glow);
+      assert.doesNotThrow(() => assertRigLock(rig, "live", scene));
+      scene.remove(glow);
+      glow.geometry.dispose();
+      (glow.material as THREE.Material).dispose();
       scene.remove(floor);
       floor.geometry.dispose();
-      floor.material.dispose();
+      (floor.material as THREE.Material).dispose();
+
+      const upright = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), new THREE.MeshBasicMaterial());
+      scene.add(upright);
+      assert.throws(() => assertRigLock(rig, "live", scene), loud);
+      scene.remove(upright);
+      upright.geometry.dispose();
+      (upright.material as THREE.Material).dispose();
+
+      const glb = new THREE.Group();
+      glb.name = "athlete.glb";
+      scene.add(glb);
+      assert.throws(
+        () => assertRigLock(rig, "live", scene),
+        (error: unknown) => {
+          loud(error);
+          assert.match((error as Error).message, /GLB/);
+          return true;
+        },
+      );
+      scene.remove(glb);
+
+      const anny = new THREE.Mesh(
+        new THREE.BoxGeometry(0.2, 0.2, 0.2),
+        new THREE.MeshBasicMaterial(),
+      );
+      anny.name = "Anny";
+      scene.add(anny);
+      assert.throws(() => assertRigLock(rig, "live", scene), /Anny/);
+      scene.remove(anny);
+      anny.geometry.dispose();
+      (anny.material as THREE.Material).dispose();
+
+      const mpfb = new THREE.Mesh(
+        new THREE.BoxGeometry(0.2, 0.2, 0.2),
+        new THREE.MeshBasicMaterial(),
+      );
+      mpfb.name = "MPFB2";
+      scene.add(mpfb);
+      assert.throws(() => assertRigLock(rig, "live", scene), /MPFB2/);
+      scene.remove(mpfb);
+      mpfb.geometry.dispose();
+      (mpfb.material as THREE.Material).dispose();
+
+      const makehuman = new THREE.Mesh(
+        new THREE.BoxGeometry(0.2, 0.2, 0.2),
+        new THREE.MeshBasicMaterial(),
+      );
+      makehuman.name = "MakeHuman";
+      scene.add(makehuman);
+      assert.throws(() => assertRigLock(rig, "live", scene), /MakeHuman/);
+      scene.remove(makehuman);
+      makehuman.geometry.dispose();
+      (makehuman.material as THREE.Material).dispose();
+
+      const second = new THREE.Group();
+      second.name = "second-rig";
+      scene.add(second);
+      assert.throws(() => assertRigLock(rig, "live", scene), /Rig/);
+      scene.remove(second);
 
       scene.position.x = 0.2;
       assert.throws(() => assertRigLock(rig, "live"), loud);
@@ -431,13 +519,17 @@ describe("figure lock", () => {
 });
 
 describe("camera and void", () => {
-  it("accepts the straight-on frame and rejects drift", () => {
+  it("accepts a three-quarter frame and rejects roll, orbit, and a bad lens", () => {
     assert.doesNotThrow(() => assertFrontalCamera(frame(1280 / 800)));
     assert.doesNotThrow(() => assertFrontalCamera(frame(390 / 844)));
     const cam = frame(1);
+    const depth = cam.position.z;
+    const height = cam.position.y;
+    cam.position.set(depth * Math.sin(Math.PI / 4), height, depth * Math.cos(Math.PI / 4));
+    cam.lookAt(0, 0.92, 0);
+    assert.doesNotThrow(() => assertFrontalCamera(cam));
     cam.position.x = 0.4;
-    assert.throws(() => assertFrontalCamera(cam), LockBreach);
-    cam.position.x = 0;
+    assert.doesNotThrow(() => assertFrontalCamera(cam));
     cam.rotation.z = 0.2;
     assert.throws(() => assertFrontalCamera(cam), LockBreach);
     assert.throws(
@@ -449,11 +541,29 @@ describe("camera and void", () => {
       loud,
     );
     const yawed = frame(1);
-    yawed.rotation.y = 0.2;
-    assert.throws(() => assertFrontalCamera(yawed), loud);
-    yawed.rotation.y = 0;
+    const yawDepth = yawed.position.z;
+    const yawHeight = yawed.position.y;
+    yawed.position.set(yawDepth * Math.sin(0.8), yawHeight, yawDepth * Math.cos(0.8));
+    yawed.lookAt(0, 0.92, 0);
+    assert.doesNotThrow(() => assertFrontalCamera(yawed));
     yawed.up.set(0, -1, 0);
+    yawed.lookAt(0, 0.92, 0);
     assert.throws(() => assertFrontalCamera(yawed), loud);
+
+    const orbit = frame(1);
+    orbit.position.x = 1.2;
+    (orbit as THREE.PerspectiveCamera & { controls: object }).controls = {
+      enableRotate: true,
+      target: new THREE.Vector3(),
+    };
+    assert.throws(
+      () => assertFrontalCamera(orbit),
+      (error: unknown) => {
+        loud(error);
+        assert.match((error as Error).message, /Orbit/);
+        return true;
+      },
+    );
   });
 
   it("requires the opaque void and no tone mapping", () => {
@@ -506,6 +616,22 @@ describe("camera and void", () => {
     assert.throws(
       () => assertClearLock({ ...gl, outputColorSpace: THREE.LinearSRGBColorSpace }, scene),
       loud,
+    );
+    assert.throws(
+      () => assertClearLock({ ...gl, bloom: { strength: 0.4 } }, scene),
+      (error: unknown) => {
+        loud(error);
+        assert.match((error as Error).message, /Bloom/);
+        return true;
+      },
+    );
+    assert.throws(
+      () =>
+        assertClearLock(
+          { ...gl, composer: { passes: [{ constructor: { name: "UnrealBloomPass" } }] } },
+          scene,
+        ),
+      /Bloom/,
     );
     assert.doesNotThrow(() => assertClearLock(gl, scene));
   });
@@ -575,7 +701,8 @@ describe("stability read", () => {
       assert.equal(LOCK.void, "#000000");
       assert.equal(LOCK.strom, "#3AD7FF");
       assert.equal(LOCK.kern, "#E7FBFF");
-      assert.equal(LOCK.signal, "#FF3B4E");
+      assert.equal("signal" in LOCK, false);
+      assert.equal(JSON.stringify(LOCK).includes("FF3B4E"), false);
       assert.equal(LOCK.proportions.headRadius, 0.105);
       assert.equal(rig.shoulderR.position.x, -LOCK.proportions.shoulderX);
       assert.ok(Object.isFrozen(LOCK));
