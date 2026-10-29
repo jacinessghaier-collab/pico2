@@ -35,6 +35,11 @@ export type Rig = {
   dispose: () => void;
 };
 
+/**
+ * Signal-core transform. The glass shell uses `shellVert`: that is where the
+ * calf bend and the transmission mask live. This stage stays plain so the
+ * red core does not inherit the body glass.
+ */
 const glassVert = /* glsl */ `
 attribute float aFade;
 varying vec3 vN;
@@ -63,16 +68,36 @@ export const RIM_OBLIQUE = { open: 1.2, view0: 0.2, view1: 0.55 } as const;
  */
 export const RIM_BODY = { front: 2.85, oblique: 2.2 } as const;
 
+/**
+ * Transmission depth compiled into the shell. Not a LOCK uniform: the
+ * #34/#35 Fresnel lobe stays `fres * uRim`, and these terms are zero at the
+ * silhouette peak and on an unmarked calf. `farOpen` is the far-wall exponent.
+ * `farGain` scales only the shoulder past the locked lobe. `wallGain` is the
+ * near wall, in the grazing band where the locked lobe is still quiet.
+ * `cap` keeps the added alpha under a hull.
+ */
+export const GLASS_TRANSMIT = {
+  farOpen: 1.28,
+  farGain: 0.55,
+  wallLo: 0.08,
+  wallMid: 0.28,
+  wallHi: 0.55,
+  wallGain: 0.22,
+  cap: 0.34,
+} as const;
+
 const shellVert = /* glsl */ `
 attribute float aFade;
 attribute float aKante;
 attribute float aBand;
+attribute float aTransmit;
 varying vec3 vN;
 varying vec3 vW;
 varying float vFade;
 varying float vKante;
 varying float vBand;
 varying float vViewX;
+varying float vTransmit;
 void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
   vW = world.xyz;
@@ -91,6 +116,7 @@ void main() {
   vFade = aFade;
   vKante = aKante;
   vBand = aBand;
+  vTransmit = aTransmit;
   vec3 ax = normalize(vec3(modelMatrix[0]));
   vViewX = abs(dot(ax, viewDir));
   gl_Position = projectionMatrix * viewMatrix * world;
@@ -114,6 +140,7 @@ varying float vFade;
 varying float vKante;
 varying float vBand;
 varying float vViewX;
+varying float vTransmit;
 void main() {
   vec3 viewDir = normalize(cameraPosition - vW);
   float ndv = abs(dot(normalize(vN), viewDir));
@@ -126,12 +153,30 @@ void main() {
   // Calf mark keeps the #34 mix. Body widens only where that mark is off.
   float open = mix(calfOpen, bodyOpen, band * (1.0 - k));
   float fres = pow(grazing, open);
+  // Two walls. The locked lobe above is unchanged. Depth is only the shoulder
+  // past that lobe, on meshes marked aTransmit, and never on the calf mark.
+  // Front: a near-wall band inside the rim. Back: the far wall, wider, so the
+  // shell has thickness. Facing centers stay on uFill and read clear.
+  float mask = clamp(vTransmit, 0.0, 1.0) * (1.0 - k);
+  float depth = 0.0;
+  if (mask > 0.001) {
+    if (gl_FrontFacing) {
+      float slopeIn = smoothstep(${GLASS_TRANSMIT.wallLo.toFixed(2)}, ${GLASS_TRANSMIT.wallMid.toFixed(2)}, grazing);
+      float slopeOut = smoothstep(${GLASS_TRANSMIT.wallMid.toFixed(2)}, ${GLASS_TRANSMIT.wallHi.toFixed(2)}, grazing);
+      depth = slopeIn * (1.0 - slopeOut) * uRim * ${GLASS_TRANSMIT.wallGain.toFixed(2)} * mask;
+    } else {
+      float farOpen = mix(open, ${GLASS_TRANSMIT.farOpen.toFixed(2)}, mask);
+      float farFres = pow(grazing, farOpen);
+      depth = max(0.0, farFres - fres) * uRim * ${GLASS_TRANSMIT.farGain.toFixed(2)} * mask;
+    }
+    depth = min(depth, ${GLASS_TRANSMIT.cap.toFixed(2)});
+  }
   float spine = exp(-abs(vW.x) * uSpineTight)
     * smoothstep(0.62, 1.04, vW.y)
     * smoothstep(1.54, 1.26, vW.y);
   vec3 chest = vW - vec3(0.0, 1.32, 0.04);
   float star = exp(-dot(chest, chest) * uStarTight);
-  float alpha = (fres * uRim * uBoost + uFill * uBoost + spine * uSpine + star * uStar) * vFade;
+  float alpha = (fres * uRim * uBoost + uFill * uBoost + depth + spine * uSpine + star * uStar) * vFade;
   if (alpha < 0.012) discard;
   vec3 col = mix(uColor, uCore, clamp(fres * 0.38 + spine * 0.18, 0.0, 1.0));
   gl_FragColor = vec4(col, alpha);
@@ -145,7 +190,7 @@ function smoothstep01(edge0: number, edge1: number, x: number) {
   return t * t * (3 - 2 * t);
 }
 
-/** Same lobe as `glassFrag`. Spine and star are torso-only and stay out. */
+/** Same lobe as `glassFrag`. Spine, star, and transmission stay out. */
 export function calfRimAlpha(
   ndot: number,
   kante: number,
@@ -163,6 +208,36 @@ export function calfRimAlpha(
   const open = calfOpen + (bodyOpen - calfOpen) * b * (1 - k);
   const fres = grazing ** open;
   return (fres * LOCK.glass.rim + LOCK.glass.fill) * fade;
+}
+
+/**
+ * Added alpha from the far wall or the near-wall band.
+ * Same curve as `glassFrag`. Zero at a facing center, at the rim peak,
+ * and wherever the calf mark or the transmit mask is off.
+ */
+export function transmissionAlpha(
+  grazing: number,
+  open: number,
+  kante: number,
+  transmit: number,
+  front: boolean,
+  rim = LOCK.glass.rim,
+) {
+  const g = Math.min(1, Math.max(0, grazing));
+  const mask = Math.min(1, Math.max(0, transmit)) * (1 - Math.min(1, Math.max(0, kante)));
+  if (mask <= 0.001) return 0;
+  const fres = g ** open;
+  let depth = 0;
+  if (front) {
+    const slopeIn = smoothstep01(GLASS_TRANSMIT.wallLo, GLASS_TRANSMIT.wallMid, g);
+    const slopeOut = smoothstep01(GLASS_TRANSMIT.wallMid, GLASS_TRANSMIT.wallHi, g);
+    depth = slopeIn * (1 - slopeOut) * rim * GLASS_TRANSMIT.wallGain * mask;
+  } else {
+    const farOpen = open + (GLASS_TRANSMIT.farOpen - open) * mask;
+    const farFres = g ** farOpen;
+    depth = Math.max(0, farFres - fres) * rim * GLASS_TRANSMIT.farGain * mask;
+  }
+  return Math.min(depth, GLASS_TRANSMIT.cap);
 }
 
 /**
@@ -391,6 +466,9 @@ function commitRibbon(
 }
 
 function glassMaterial(boost: number, role: "glass" | "glass-bright") {
+  // Transmission depth is compiled into the fragment stage (`GLASS_TRANSMIT`).
+  // A new uniform would break the seal. MeshTransmissionMaterial needs an
+  // environment map, which the void lock rejects, and it would drop this lobe.
   const shell = LOCK.glass;
   const material = new THREE.ShaderMaterial({
     transparent: true,
@@ -468,6 +546,10 @@ function solid(parent: THREE.Object3D, geo: THREE.BufferGeometry, material: THRE
   // Zero keeps the locked frontal exponent. Torso and limbs opt into the body band.
   if (!geo.getAttribute("aBand")) {
     geo.setAttribute("aBand", new THREE.Float32BufferAttribute(new Float32Array(count), 1));
+  }
+  // Zero keeps the shell on the locked Fresnel only. Volumes opt into transmission.
+  if (!geo.getAttribute("aTransmit")) {
+    geo.setAttribute("aTransmit", new THREE.Float32BufferAttribute(new Float32Array(count), 1));
   }
   geo.computeVertexNormals();
   const mesh = new THREE.Mesh(geo, material);
@@ -653,6 +735,19 @@ function markBodyRim(mesh: THREE.Mesh) {
   const band = new Float32Array(count);
   band.fill(1);
   mesh.geometry.setAttribute("aBand", new THREE.Float32BufferAttribute(band, 1));
+  return mesh;
+}
+
+/**
+ * Glass volume. The far wall and the near-wall band turn on.
+ * The calf stays unmarked so the #34/#35 rear rim is the only lobe there.
+ * Joint bridges stay unmarked so a seam does not read as a ball.
+ */
+function transmit(mesh: THREE.Mesh) {
+  const count = mesh.geometry.getAttribute("position").count;
+  const data = new Float32Array(count);
+  data.fill(1);
+  mesh.geometry.setAttribute("aTransmit", new THREE.Float32BufferAttribute(data, 1));
   return mesh;
 }
 
@@ -2301,14 +2396,14 @@ export function createKushim(): Rig {
     28,
   );
   fadeTorsoSides(torsoGeo);
-  const torso = markBodyRim(solid(chest, torsoGeo, glass));
+  const torso = transmit(markBodyRim(solid(chest, torsoGeo, glass)));
   torso.scale.set(SHELL_SX, 1, 0.72);
   torso.userData.lockKey = "torso";
 
   const head = new THREE.Group();
   head.position.y = P.headLocalY;
   chest.add(head);
-  const skull = solid(head, new THREE.SphereGeometry(P.headRadius, 24, 16), glass);
+  const skull = transmit(solid(head, new THREE.SphereGeometry(P.headRadius, 24, 16), glass));
   skull.scale.set(1, 1.16, 1.02);
   skull.userData.lockKey = "skull";
   const jaw = solid(head, new THREE.SphereGeometry(P.headRadius * 0.72, 16, 12), glass);
@@ -2392,8 +2487,8 @@ export function createKushim(): Rig {
     const shoulder = new THREE.Group();
     shoulder.position.set(side * P.shoulderX, P.shoulderLocalY, 0);
     chest.add(shoulder);
-    markBodyRim(solid(chest, shoulderSlope(side), glass));
-    const upperMesh = markBodyRim(solid(
+    transmit(markBodyRim(solid(chest, shoulderSlope(side), glass)));
+    const upperMesh = transmit(markBodyRim(solid(
       shoulder,
       organicTube(
         UPPER_RADII,
@@ -2405,7 +2500,7 @@ export function createKushim(): Rig {
         { bury: true, hug: true, section: upperSection },
       ),
       glass,
-    ));
+    )));
     const upperN = emptyRibbon();
     fillLimb(
       upperN,
@@ -2425,13 +2520,13 @@ export function createKushim(): Rig {
     elbow.position.y = -P.upperArm;
     shoulder.add(elbow);
     markBodyRim(solid(elbow, jointBridge(LIMB.fore.r0, BLEND.elbow), glass));
-    const foreMesh = markBodyRim(solid(
+    const foreMesh = transmit(markBodyRim(solid(
       elbow,
       organicTube(FORE_RADII, P.foreArm, side, 0, BLEND.elbow, 0, {
         join: "child",
       }),
       glass,
-    ));
+    )));
     const foreN = emptyRibbon();
     fillLimb(foreN, P.foreArm, FORE_RADII, 0.07, 0.00009, 0.42, side * 2.1, side);
     commitRibbon(elbow, foreN, nerve);
@@ -2439,7 +2534,7 @@ export function createKushim(): Rig {
     const wrist = new THREE.Group();
     wrist.position.y = -P.foreArm;
     elbow.add(wrist);
-    const palm = markBodyRim(solid(
+    const palm = transmit(markBodyRim(solid(
       wrist,
       new THREE.LatheGeometry(
         [
@@ -2451,7 +2546,7 @@ export function createKushim(): Rig {
         10,
       ),
       glass,
-    ));
+    )));
     palm.scale.set(1.15, 1, 0.42);
     palm.position.set(0, -0.01, 0.01);
     const fingers: THREE.Group[] = [];
@@ -2522,7 +2617,7 @@ export function createKushim(): Rig {
     hip.userData.lockSide = side;
     hip.position.set(side * HIP_X, P.hipY, 0);
     root.add(hip);
-    const thighMesh = markBodyRim(solid(
+    const thighMesh = transmit(markBodyRim(solid(
       hip,
       organicTube(
         THIGH_RADII,
@@ -2533,7 +2628,7 @@ export function createKushim(): Rig {
         BLEND.knee,
       ),
       glass,
-    ));
+    )));
     const hipN = emptyRibbon();
     fillLimb(
       hipN,
@@ -2571,7 +2666,7 @@ export function createKushim(): Rig {
     const foot = new THREE.Group();
     ankle.add(foot);
     const shaped = footLathe();
-    const footMesh = markBodyRim(solid(foot, shaped.geo, glass));
+    const footMesh = transmit(markBodyRim(solid(foot, shaped.geo, glass)));
     const ankleY = P.hipY - P.thigh - P.shin;
     footMesh.position.y = SOLE_KISS - ankleY - shaped.minY;
     const footN = emptyRibbon();
