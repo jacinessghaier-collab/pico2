@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 import * as THREE from "three";
 import type { BufferGeometry, Mesh, Object3D } from "three";
-import { createKushim, type Rig } from "@/kushim/anatomy";
+import { ARMPIT_Y, createKushim, SHOULDER_LINE, torsoShellAt, upperArmStation, type Rig } from "@/kushim/anatomy";
 import { LOCK } from "@/kushim/lock";
 
 before(() => {
@@ -12,9 +12,6 @@ before(() => {
     document: { createElement: (tag: string) => (tag === "canvas" ? canvas() : {}) },
   });
 });
-
-/** Widest torso ring at the shoulder. Same lathe the shell uses, times SHELL_SX. */
-const SHOULDER_LINE = 0.1995;
 
 function tubeOn(parent: Object3D) {
   let best: Mesh | null = null;
@@ -60,6 +57,73 @@ describe("lathe shell", () => {
   let rig: Rig;
   before(() => {
     rig = createKushim();
+  });
+
+  it("keeps the upper arm outside the torso", () => {
+    const chestY = LOCK.proportions.chestY;
+    const v = new THREE.Vector3();
+    for (const shoulder of [rig.shoulderL, rig.shoulderR]) {
+      const geo = tubeOn(shoulder);
+      const pos = geo.getAttribute("position");
+      const fade = geo.getAttribute("aFade");
+      let inside = 0;
+      let worst = 0;
+      shoulder.updateWorldMatrix(true, true);
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos as THREE.BufferAttribute, i).applyMatrix4(shoulder.matrixWorld);
+        const localY = v.y - chestY;
+        const shell = torsoShellAt(localY);
+        const e = (v.x * v.x) / (shell.x * shell.x) + (v.z * v.z) / (shell.z * shell.z);
+        const drawn = !fade || fade.getX(i) >= 0.45;
+        // Below the armpit the whole tube stays outside. In the deltoid only the drawn shell does.
+        if ((drawn || localY < ARMPIT_Y) && e < 1) {
+          inside += 1;
+          worst = Math.max(worst, 1 - e);
+        }
+      }
+      assert.equal(inside, 0, `${inside} upper-arm points inside the torso, depth ${worst.toFixed(4)}`);
+    }
+    let onDeltoid = 0;
+    let belowArmpit = 0;
+    for (let i = 0; i <= 24; i++) {
+      const s = upperArmStation(i / 24);
+      const gap = s.center - s.r - s.torsoHalf;
+      if (s.y >= ARMPIT_Y + 0.08) {
+        onDeltoid += 1;
+        assert.ok(gap < 0.004, `gap ${gap.toFixed(4)} at y ${s.y.toFixed(3)} separates the deltoid`);
+      }
+      if (s.y <= 0.05) {
+        belowArmpit += 1;
+        assert.ok(gap > 0.012, `gap ${gap.toFixed(4)} at y ${s.y.toFixed(3)} never opens under the armpit`);
+      }
+    }
+    assert.ok(onDeltoid >= 3 && belowArmpit >= 4, `samples deltoid ${onDeltoid} waist ${belowArmpit}`);
+  });
+
+  it("keeps the chest at least as wide as the hip and the thigh inside it", () => {
+    const torso = rig.chest.children.find((child) => (child as Mesh).userData?.lockKey === "torso") as Mesh;
+    const pos = torso.geometry.getAttribute("position");
+    let chest = 0;
+    let hip = 0;
+    for (let i = 0; i < pos.count; i++) {
+      const x = Math.abs(pos.getX(i) * torso.scale.x);
+      const y = pos.getY(i);
+      if (y > 0.1 && y < 0.18) chest = Math.max(chest, x);
+      if (y > -0.26 && y < -0.18) hip = Math.max(hip, x);
+    }
+    assert.ok(chest >= hip, `chest ${chest} narrower than hip ${hip}`);
+    for (const side of [1, -1] as const) {
+      const leg = rig.root.children.find(
+        (child) => child.userData.lockKey === "hip" && child.userData.lockSide === side,
+      );
+      if (!leg) throw new Error("hip missing");
+      const geo = tubeOn(leg);
+      let outer = 0;
+      scan(geo, (x) => {
+        outer = Math.max(outer, Math.abs(leg.position.x + x));
+      });
+      assert.ok(outer <= hip + 1e-3, `thigh ${outer} wider than hip ${hip}`);
+    }
   });
 
   it("keeps the upper-arm outer line on or inside the shoulder", () => {

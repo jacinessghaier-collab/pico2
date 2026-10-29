@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 import { Vector3, type BufferGeometry, type Mesh, type Object3D } from "three";
-import { createKushim, type Rig } from "@/kushim/anatomy";
+import { createKushim, SHOULDER_LINE, type Rig } from "@/kushim/anatomy";
 import { LOCK } from "@/kushim/lock";
 
 before(() => {
@@ -11,9 +11,6 @@ before(() => {
     document: { createElement: (tag: string) => (tag === "canvas" ? canvas() : {}) },
   });
 });
-
-/** Widest torso ring at the shoulder. Same lathe the shell uses, times SHELL_SX. */
-const SHOULDER_LINE = 0.1995;
 
 function tubeOn(parent: Object3D) {
   let best: Mesh | null = null;

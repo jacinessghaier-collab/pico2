@@ -545,55 +545,62 @@ function shellRadius(localY: number) {
   return pts[last][0];
 }
 
-/** How far the upper-arm silhouette sits outside the torso. Small at the axilla. */
-function armProtrusion(along: number) {
-  const t = Math.min(1, Math.max(0, along));
-  // No early cap. That bulge was the hard lateral edge on the deltoid.
-  return 0.005 + t * t * 0.02;
+/** Chest-local height where the arm leaves the ribcage. Above this it is the deltoid. */
+export const ARMPIT_Y = 0.15;
+/** Just off the skin so the disk is not inside the ellipse, and not a visible gap. */
+const DELTOID_SKIN = 0.0015;
+
+function armHeight(t: number) {
+  return (
+    LOCK.proportions.shoulderLocalY +
+    BLEND.shoulder * (1 - t) -
+    LOCK.proportions.upperArm * t
+  );
 }
 
-/** Chest-local lateral center of the hugged upper arm. */
-function hugCenter(chestLocalY: number, radius: number) {
-  const along =
-    (LOCK.proportions.shoulderLocalY - chestLocalY) / LOCK.proportions.upperArm;
-  const half = shellRadius(chestLocalY) * SHELL_SX;
-  return half + armProtrusion(along) - radius;
-}
-
-/**
- * Chest-space center the upper-arm glass is fitted from.
- * Nerve paths read `upperGlass`, which pulls this center inside the shoulder line.
- */
-function upperCenter(t: number) {
+function armSample(t: number) {
   const u = Math.min(1, Math.max(0, t));
   const r = radiusAt(UPPER_RADII, u);
-  const tubeY = BLEND.shoulder * (1 - u) - LOCK.proportions.upperArm * u;
-  const y = LOCK.proportions.shoulderLocalY + tubeY;
-  const hugged = hugCenter(y, r);
-  const shoulderHalf = shellRadius(LOCK.proportions.shoulderLocalY) * SHELL_SX;
-  // Legacy outer line. `upperGlass` pulls the tube off it; nerves follow that fit.
-  const line = shoulderHalf + 0.034;
-  const free = line - r;
-  const hold = 1 - hermite(0.12, 0.4, u);
-  let center = hugged * hold + free * (1 - hold);
-  const toElbow = hermite(0.62, 0.96, u);
-  center = center * (1 - toElbow) + LOCK.proportions.shoulderX * toElbow;
-  return { r, y, center };
+  const y = armHeight(u);
+  const torsoHalf = shellRadius(y) * SHELL_SX;
+  return { r, y, torsoHalf, touch: torsoHalf + r + DELTOID_SKIN };
+}
+
+/** Center of the arm at the armpit. Held straight below that so the waist shows. */
+let armpitCenter = 0;
+function centerAtArmpit() {
+  if (armpitCenter) return armpitCenter;
+  const span = BLEND.shoulder + LOCK.proportions.upperArm;
+  const t = (LOCK.proportions.shoulderLocalY + BLEND.shoulder - ARMPIT_Y) / span;
+  armpitCenter = armSample(t).touch;
+  return armpitCenter;
 }
 
 /**
- * Glass upper arm. Widest at the deltoid, tapering to the elbow.
- * The lateral peak meets the acromion; the rest of the limb is inside it.
+ * Upper-arm station in chest space.
+ * Through the deltoid the tube is seated in the cap (the part inside the shell is
+ * not drawn). From the armpit down the center stays put, so the waist leaves a gap.
+ */
+export function upperArmStation(t: number) {
+  const s = armSample(t);
+  const join = hermite(ARMPIT_Y, ARMPIT_Y + 0.08, s.y);
+  const seated = s.torsoHalf + s.r * 0.32;
+  const clear = Math.max(s.torsoHalf + s.r + 0.002, centerAtArmpit());
+  const center = seated * join + clear * (1 - join);
+  return { r: s.r, y: s.y, torsoHalf: s.torsoHalf, center, outer: center + s.r };
+}
+
+/** Front and depth half-axes of the torso ellipse at a chest-local height. */
+export function torsoShellAt(localY: number) {
+  return { x: shellRadius(localY) * SHELL_SX, z: shellDepth(localY) };
+}
+
+/**
+ * Glass upper arm. Slim tube, outside the torso, tapering toward the elbow.
  */
 function upperGlass(t: number) {
-  const src = upperCenter(t);
-  const shoulderHalf = shellRadius(LOCK.proportions.shoulderLocalY) * SHELL_SX;
-  const peak = Math.max(...UPPER_RADII);
-  const fitR = src.r;
-  // Thickest section meets the acromion. Thinner sections taper in on that hang,
-  // instead of riding the ribcage.
-  const center = shoulderHalf - peak;
-  return { r: fitR, y: src.y, center };
+  const arm = upperArmStation(t);
+  return { r: arm.r, y: arm.y, center: arm.center };
 }
 
 /** Round upper arm. A flat ellipse puts a hard rim on the lateral pole. */
@@ -671,6 +678,13 @@ function skinFade(x: number, y: number, z: number) {
   return hermite(0.62, 1.04, e);
 }
 
+/** Upper arm: stay undrawn until the vertex is outside the torso ellipse. */
+function armSkinFade(x: number, y: number, z: number) {
+  const shell = torsoShellAt(y);
+  const e = (x * x) / (shell.x * shell.x) + (z * z) / (shell.z * shell.z);
+  return hermite(1, 1.1, e);
+}
+
 type TubeOpts = {
   /** Extra radius at the hidden proximal tip so the child wraps the parent rim. */
   sleeve?: number;
@@ -739,7 +753,7 @@ function organicTube(
       const x = local.x + bias;
       const z = local.z;
       let ring = cover;
-      if (bury) ring *= skinFade(side * shoulderX + x, shoulderY + y, z);
+      if (bury) ring *= armSkinFade(side * shoulderX + x, shoulderY + y, z);
       pos.push(x, y, z);
       fade.push(ring);
     }
@@ -857,9 +871,9 @@ function shoulderSlope(side: 1 | -1) {
   const pos: number[] = [];
   const fade: number[] = [];
   const idx: number[] = [];
-  const p0 = new THREE.Vector3(0.055, 0.3, 0.014);
-  const p1 = new THREE.Vector3(0.12, 0.24, 0.02);
-  const p2 = new THREE.Vector3(0.1, 0.12, 0.008);
+  const p0 = new THREE.Vector3(0.05, 0.32, 0.012);
+  const p1 = new THREE.Vector3(0.11, 0.28, 0.016);
+  const p2 = new THREE.Vector3(0.1, 0.16, 0.008);
   const c = new THREE.Vector3();
   const tang = new THREE.Vector3();
   const sideV = new THREE.Vector3();
@@ -1072,31 +1086,33 @@ const SKULL_SY = 1.16;
 const HIP_X = 0.11;
 /**
  * Human torso. Radii are the lathe, before SHELL_SX.
- * Neck to acromion is about 19°. The cap rounds into a chest narrower
- * than the deltoid. Waist is about three quarters of that chest, hips
- * a little wider, then a soft V into the thighs.
+ * Neck to acromion is about 18°, sampled so no ring jumps out over a few
+ * centimetres. Chest is at least as wide as the hip. Waist is narrower.
  */
 const SHELL_LATHE: Array<[number, number]> = [
-  [0.026, -0.46],
-  [0.038, -0.4],
-  [0.055, -0.34],
-  [0.082, -0.28],
-  [0.118, -0.22],
-  [0.098, -0.15],
-  [0.086, -0.08],
-  [0.09, -0.02],
-  [0.1, 0.05],
-  [0.114, 0.13],
-  [0.112, 0.18],
-  [0.128, 0.22],
-  [0.168, 0.248],
-  [0.196, 0.262],
-  [0.19, 0.28],
-  [0.162, 0.294],
-  [0.112, 0.308],
-  [0.072, 0.32],
-  [0.052, 0.332],
-  [0.048, 0.36],
+  [0.028, -0.46],
+  [0.04, -0.4],
+  [0.062, -0.34],
+  [0.11, -0.3],
+  [0.168, -0.24],
+  [0.172, -0.2],
+  [0.15, -0.12],
+  [0.122, -0.04],
+  [0.132, 0.04],
+  [0.168, 0.1],
+  [0.178, 0.15],
+  [0.17, 0.2],
+  [0.174, 0.24],
+  [0.178, 0.258],
+  [0.186, 0.276],
+  [0.192, 0.298],
+  [0.178, 0.308],
+  [0.148, 0.318],
+  [0.11, 0.328],
+  [0.086, 0.336],
+  [0.062, 0.346],
+  [0.052, 0.356],
+  [0.048, 0.366],
   [0.044, 0.44],
   [0.042, 0.52],
 ];
@@ -1145,11 +1161,22 @@ const BLEND = { elbow: 0.14, knee: 0.14, shoulder: 0.02, hip: 0.05 };
 /**
  * Soft biceps, not a deltoid spike. Root is buried; the last sample matches the elbow.
  */
-const UPPER_RADII = [0.032, 0.04, 0.048, 0.054, 0.058, 0.052, 0.044, 0.038, 0.034];
-/** Forearm belly sits past the elbow blend. Ends match the wrist. */
-const FORE_RADII = [0.034, 0.036, 0.04, 0.04, 0.036, 0.028, 0.022];
-/** Quad belly, then the knee radius so the bridge stays the same tube. */
-const THIGH_RADII = [0.096, 0.104, 0.106, 0.088, 0.066, 0.048, 0.042, 0.042, 0.042];
+/** Deltoid through biceps to the elbow. Peak is about a third of the shoulder half-width. */
+const UPPER_RADII = [0.056, 0.06, 0.058, 0.052, 0.046, 0.042, 0.038, 0.036, 0.034];
+/** Elbow into a wrist narrow enough to enter the hand, not a ball. */
+const FORE_RADII = [0.034, 0.032, 0.03, 0.028, 0.026, 0.024, 0.022];
+/** Widest at the hip, then down to the knee the calf already meets. */
+const THIGH_RADII = [0.064, 0.066, 0.06, 0.054, 0.048, 0.044, 0.042, 0.042, 0.042];
+
+/**
+ * Front half-width the upper arm is allowed to reach.
+ * Acromion plus the deltoid that hangs outside the torso.
+ */
+export const SHOULDER_LINE = (() => {
+  let outer = 0;
+  for (let i = 0; i <= 48; i++) outer = Math.max(outer, upperArmStation(i / 48).outer);
+  return outer;
+})();
 /**
  * Knee, then the bone radius the calf section builds on.
  * Belly in the upper third, smooth taper to the ankle. No spindle.
@@ -2445,9 +2472,7 @@ export function createKushim(): Rig {
     const elbow = new THREE.Group();
     elbow.position.y = -P.upperArm;
     shoulder.add(elbow);
-    const shoulderHalf = shellRadius(P.shoulderLocalY) * SHELL_SX;
-    const hang = shoulderHalf - Math.max(...UPPER_RADII);
-    const foreInset = Math.max(0, P.shoulderX - hang - 0.018);
+    const foreInset = Math.max(0, P.shoulderX - upperGlass(1).center);
     const elbowBridge = markBodyRim(solid(elbow, jointBridge(LIMB.fore.r0, BLEND.elbow), glass));
     elbowBridge.position.x = side * -foreInset;
     transmit(markBodyRim(solid(
@@ -2468,17 +2493,37 @@ export function createKushim(): Rig {
     const hand = new THREE.Group();
     hand.position.x = side * -foreInset;
     wrist.add(hand);
-    const palmGeo = new THREE.LatheGeometry(
-      [
-        new THREE.Vector2(0.014, 0),
-        new THREE.Vector2(0.032, -0.022),
-        new THREE.Vector2(0.038, -0.052),
-        new THREE.Vector2(0.034, -0.08),
-        new THREE.Vector2(0.018, -0.09),
-      ],
-      10,
-    );
-    palmGeo.scale(1, 1, 0.46);
+    const palmGeo = new THREE.BufferGeometry();
+    const palmSeg = 16;
+    const palmRow = palmSeg + 1;
+    const palmRings: Array<[number, number, number]> = [
+      [0.022, 0.012, 0.008],
+      [0.022, 0.011, -0.018],
+      [0.025, 0.01, -0.042],
+      [0.028, 0.009, -0.068],
+      [0.022, 0.007, -0.09],
+      [0.014, 0.005, -0.102],
+    ];
+    const palmPos: number[] = [];
+    const palmIdx: number[] = [];
+    for (const [rx, rz, y] of palmRings) {
+      for (let j = 0; j <= palmSeg; j++) {
+        const a = (j / palmSeg) * Math.PI * 2;
+        let s = Math.sin(a);
+        if (j === 0 || j === palmSeg || Math.abs(s) < 1e-7) s = 0;
+        palmPos.push(Math.cos(a) * rx, y, s * rz);
+      }
+    }
+    for (let i = 0; i < palmRings.length - 1; i++) {
+      for (let j = 0; j < palmSeg; j++) {
+        const a = i * palmRow + j;
+        const b = a + palmRow;
+        palmIdx.push(a, b, a + 1, b, b + 1, a + 1);
+      }
+    }
+    palmGeo.setAttribute("position", new THREE.Float32BufferAttribute(palmPos, 3));
+    palmGeo.setIndex(palmIdx);
+    palmGeo.computeVertexNormals();
     transmit(markBodyRim(solid(hand, palmGeo, glass)));
     const fingers: THREE.Group[] = [];
     for (const spec of HAND_FINGERS) {
