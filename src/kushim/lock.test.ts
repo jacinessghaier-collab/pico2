@@ -33,14 +33,9 @@ describe("visual lock", () => {
       headRadius: 0.105,
       headLocalY: 0.48,
     });
-    assert.deepEqual([...GESTURES], [
-      "idle",
-      "listen",
-      "think",
-      "speak",
-      "explain",
-      "acknowledge",
-      "empathize",
-    ]);
+    assert.deepEqual(
+      [...GESTURES],
+      ["idle", "listen", "think", "speak", "explain", "acknowledge", "empathize"],
+    );
   });
 });

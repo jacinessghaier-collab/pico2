@@ -3,9 +3,12 @@
  * Legal motion (breath, gestures, filament 0.86–1, shoulder spark, viseme,
  * jaw drop, gaze, blink) is the envelope from tickKushim and lipsync —
  * update those constants in the same change.
- * Silhouette, palette, the single red site, void, and the straight-on camera stay put.
+ * Silhouette, palette, and the void stay put. 00-ZIEL has no red shoulder knot.
+ * LOCK.signal stays the main value so the current figure is unchanged. It is not canon.
+ * A subtle floor reflection, foot glow, and a three-quarter camera are allowed.
  * The re-read also rejects a swapped shader or geometry, a reparented or hidden
- * part, a yawed or upside-down camera, and a scene that covers the void.
+ * part, a rolled or upside-down camera, and a scene that covers the void.
+ * GLB, Anny, MPFB2, MakeHuman, a second rig, orbit controls, and Bloom stay refused.
  * The live scene re-reads on LOCK_READ_SEC. There is no second checker and no post-pass.
  */
 import * as THREE from "three";
@@ -28,7 +31,6 @@ export const LOCK_CANON = {
   void: "#000000",
   strom: "#3AD7FF",
   kern: "#E7FBFF",
-  signal: "#FF3B4E",
   filament: "#D4F04A",
   filamentKern: "#F7FFC2",
   glass: {
@@ -57,8 +59,6 @@ export const LOCK_CANON = {
     foot: 0.11,
     tight: 1.15,
   },
-  signalNerveCore: "#FF8A2A",
-  signalCore: "#FFB15A",
   spriteInner: "#FFFFFF",
   proportions: {
     hipY: 1,
@@ -118,15 +118,7 @@ function freezeCanon(value: object) {
 freezeCanon(LOCK_CANON);
 
 export type MaterialRole =
-  | "glass"
-  | "glass-bright"
-  | "nerve"
-  | "signal"
-  | "core"
-  | "sprite"
-  | "ring"
-  | "aura"
-  | "ground";
+  "glass" | "glass-bright" | "nerve" | "signal" | "core" | "sprite" | "ring" | "aura" | "ground";
 
 export type LockedRig = {
   root: THREE.Object3D;
@@ -217,6 +209,43 @@ function mustHex(color: THREE.Color, expected: string, de: string, en: string) {
   }
 }
 
+/** Shoulder colors on the current figure stay sealed, including the deprecated signal. */
+function expectSealedColor(color: THREE.Color, de: string, en: string) {
+  if (!color?.isColor) breach(`${de} fehlt.`, `${en} is missing.`);
+  if (!Object.isFrozen(color)) breach(`${de} ist nicht eingefroren.`, `${en} is not frozen.`);
+}
+
+const SIGNAL_RED = "#FF3B4E";
+
+function colorIsSignalRed(color: unknown): boolean {
+  return (
+    Boolean((color as THREE.Color | undefined)?.isColor) &&
+    hexOf(color as THREE.Color) === SIGNAL_RED
+  );
+}
+
+function usesSignalRed(root: THREE.Object3D): boolean {
+  let found = false;
+  root.traverse((node) => {
+    if (found) return;
+    for (const material of materialsOf(node)) {
+      if (colorIsSignalRed((material as THREE.MeshBasicMaterial).color)) {
+        found = true;
+        return;
+      }
+      const shader = material as THREE.ShaderMaterial;
+      if (!shader.isShaderMaterial || !shader.uniforms) continue;
+      for (const slot of Object.values(shader.uniforms)) {
+        if (colorIsSignalRed((slot as { value?: unknown }).value)) {
+          found = true;
+          return;
+        }
+      }
+    }
+  });
+  return found;
+}
+
 function markData(obj: THREE.Object3D): Mark {
   return obj.userData as Mark;
 }
@@ -292,7 +321,24 @@ export function assertLockTable() {
   if (top !== "aura,filament,filamentKern,glass,ground,kern,proportions,signal,strom,void") {
     breach("LOCK hat andere Schlüssel.", "LOCK has different keys.");
   }
-  const colors = ["void", "strom", "kern", "signal", "filament", "filamentKern"] as const;
+  if (LOCK.signal !== SIGNAL_RED) {
+    breach(
+      "Das veraltete Schultersignal weicht von main ab.",
+      "The deprecated shoulder signal drifted from main.",
+    );
+  }
+  if (
+    "signal" in LOCK_CANON ||
+    "signalNerveCore" in LOCK_CANON ||
+    "signalCore" in LOCK_CANON ||
+    JSON.stringify(LOCK_CANON).toUpperCase().includes(SIGNAL_RED.slice(1))
+  ) {
+    breach(
+      "Die Zieltabelle enthält Signalrot #FF3B4E.",
+      "The target table contains signal red #FF3B4E.",
+    );
+  }
+  const colors = ["void", "strom", "kern", "filament", "filamentKern"] as const;
   for (const key of colors) {
     if (LOCK[key].toUpperCase() !== LOCK_CANON[key]) {
       breach(
@@ -376,7 +422,9 @@ export function markMaterial(material: THREE.Material, role: MaterialRole) {
   shaders.set(material, {
     vertex: shader.vertexShader,
     fragment: shader.fragmentShader,
-    keys: Object.keys(shader.uniforms ?? {}).sort().join(","),
+    keys: Object.keys(shader.uniforms ?? {})
+      .sort()
+      .join(","),
   });
 }
 
@@ -388,7 +436,9 @@ function auditShader(material: THREE.Material) {
   if (shader.vertexShader !== sealed.vertex || shader.fragmentShader !== sealed.fragment) {
     breach("Der Shader der Figur wurde ausgetauscht.", "The figure shader was replaced.");
   }
-  const keys = Object.keys(shader.uniforms ?? {}).sort().join(",");
+  const keys = Object.keys(shader.uniforms ?? {})
+    .sort()
+    .join(",");
   if (keys !== sealed.keys) {
     breach("Die Shader-Uniforms wurden erweitert.", "Shader uniforms were extended.");
   }
@@ -478,8 +528,8 @@ function auditChain(rig: LockedRig) {
   }
   if (rig.core.parent !== rig.shoulderR || rig.ring.parent !== rig.shoulderR) {
     breach(
-      "Rotes Signal sitzt nicht auf Kushims rechter Schulter.",
-      "Red signal is not on Kushim's right shoulder.",
+      "Das Schultersignal sitzt nicht auf Kushims rechter Schulter.",
+      "The shoulder signal is not on Kushim's right shoulder.",
     );
   }
 }
@@ -645,7 +695,7 @@ function auditSkeleton(rig: LockedRig, phase: Phase) {
     const y = finite(array[i * 3 + 1], "Signalring ungültig.", "Signal ring is invalid.");
     const z = finite(array[i * 3 + 2], "Signalring ungültig.", "Signal ring is invalid.");
     if (Math.hypot(x, y, z) > LOCK_CANON.sparkRadius) {
-      breach("Die roten Funken verlassen die Schulter.", "The red sparks leave the shoulder.");
+      breach("Die Funken verlassen die Schulter.", "The sparks leave the shoulder.");
     }
   }
 }
@@ -683,12 +733,12 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
       bump(role, material);
       if ((role === "signal" || role === "core" || role === "ring") && !under(obj, rig.shoulderR)) {
         breach(
-          "Rotes Signal sitzt nicht auf Kushims rechter Schulter.",
-          "Red signal is not on Kushim's right shoulder.",
+          "Das Schultersignal sitzt nicht auf Kushims rechter Schulter.",
+          "The shoulder signal is not on Kushim's right shoulder.",
         );
       }
       if ((role === "signal" || role === "core" || role === "ring") && under(obj, rig.shoulderL)) {
-        breach("Die linke Schulter trägt Rot.", "The left shoulder carries red.");
+        breach("Die linke Schulter trägt das Signal.", "The left shoulder carries the signal.");
       }
     }
   });
@@ -748,13 +798,8 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
   }
   expectGlassLook(rig.nerve, "Nerven", "Nerves", THREE.DoubleSide);
 
-  mustHex(colorSlot(rig.signal, "uColor"), LOCK_CANON.signal, "Signalfarbe", "Signal color");
-  mustHex(
-    colorSlot(rig.signal, "uCore"),
-    LOCK_CANON.signalNerveCore,
-    "Signal-Kernlicht",
-    "Signal nerve highlight",
-  );
+  expectSealedColor(colorSlot(rig.signal, "uColor"), "Signalfarbe", "Signal color");
+  expectSealedColor(colorSlot(rig.signal, "uCore"), "Signal-Kernlicht", "Signal nerve highlight");
   mustClose(
     numberSlot(rig.signal, "uSpeed", true),
     LOCK_CANON.signalSpeed,
@@ -766,13 +811,8 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
   expectGlassLook(rig.signal, "Signalnerven", "Signal nerves", THREE.DoubleSide);
 
   const coreShader = coreMat as THREE.ShaderMaterial;
-  mustHex(
-    colorSlot(coreShader, "uColor"),
-    LOCK_CANON.signal,
-    "Kernfarbe Signal",
-    "Core signal color",
-  );
-  mustHex(colorSlot(coreShader, "uCore"), LOCK_CANON.signalCore, "Kern-Glanz", "Core highlight");
+  expectSealedColor(colorSlot(coreShader, "uColor"), "Kernfarbe Signal", "Core signal color");
+  expectSealedColor(colorSlot(coreShader, "uCore"), "Kern-Glanz", "Core highlight");
   mustClose(
     numberSlot(coreShader, "uBoost", true),
     LOCK_CANON.coreBoost,
@@ -782,7 +822,7 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
   expectGlassLook(coreShader, "Signalkern", "Signal core", THREE.FrontSide);
 
   const points = ringMat as THREE.PointsMaterial;
-  mustHex(points.color, LOCK_CANON.signal, "Ringfarbe", "Ring color");
+  expectSealedColor(points.color, "Ringfarbe", "Ring color");
   mustClose(points.size, LOCK_CANON.ringSize, "Ringgröße", "Ring size");
   if (phase === "build")
     mustClose(points.opacity, LOCK_CANON.ringOpacity, "Ringdeckkraft", "Ring opacity");
@@ -1025,11 +1065,81 @@ function auditRootSeat(root: THREE.Object3D) {
   mustClose(parent.scale.z, 1, "Szenenskalierung Z", "Scene scale Z");
 }
 
+function intruderLabel(obj: THREE.Object3D): string {
+  const data = obj.userData as { source?: unknown; kind?: unknown; format?: unknown };
+  return [obj.name, obj.type, data?.source, data?.kind, data?.format]
+    .filter((part): part is string => typeof part === "string")
+    .join(" ")
+    .toLowerCase();
+}
+
+/** Horizontal deck near the feet: floor reflection or foot glow. Not a body. */
+function isFloorReflection(obj: THREE.Object3D): boolean {
+  if (obj.children.length > 0) return false;
+  const mesh = obj as THREE.Mesh;
+  const geo = mesh.geometry as { type?: string } | undefined;
+  if (!geo || (geo.type !== "PlaneGeometry" && geo.type !== "CircleGeometry")) return false;
+  if ((mesh as THREE.SkinnedMesh).isSkinnedMesh === true) return false;
+  const label = intruderLabel(obj);
+  if (
+    label.includes(".glb") ||
+    label.includes("gltf") ||
+    label.includes("anny") ||
+    label.includes("mpfb") ||
+    label.includes("makehuman")
+  ) {
+    return false;
+  }
+  if (!Number.isFinite(obj.position.y) || obj.position.y < -0.05 || obj.position.y > 0.35) {
+    return false;
+  }
+  if (
+    !Number.isFinite(obj.rotation.x) ||
+    !Number.isFinite(obj.rotation.y) ||
+    !Number.isFinite(obj.rotation.z)
+  ) {
+    return false;
+  }
+  const flat = Math.abs(Math.abs(obj.rotation.x) - Math.PI / 2) < 0.35;
+  return flat && Math.abs(obj.rotation.y) < 0.35 && Math.abs(obj.rotation.z) < 0.35;
+}
+
+function sceneIntruder(obj: THREE.Object3D): { de: string; en: string } {
+  const label = intruderLabel(obj);
+  if (label.includes("anny")) {
+    return { de: "Anny ist abgelehnt.", en: "Anny is refused." };
+  }
+  if (label.includes("mpfb")) {
+    return { de: "MPFB2 ist abgelehnt.", en: "MPFB2 is refused." };
+  }
+  if (label.includes("makehuman")) {
+    return { de: "MakeHuman ist abgelehnt.", en: "MakeHuman is refused." };
+  }
+  if (
+    label.includes(".glb") ||
+    label.includes("gltf") ||
+    (obj as THREE.SkinnedMesh).isSkinnedMesh === true
+  ) {
+    return { de: "Ein GLB ersetzt die Figur.", en: "A GLB replaces the figure." };
+  }
+  if ((obj as THREE.Group).isGroup === true) {
+    return { de: "Ein zweites Rig steht im Raum.", en: "A second rig is standing in the room." };
+  }
+  return { de: "Etwas Fremdes steht im Raum.", en: "Something else is standing in the room." };
+}
+
 function auditSceneSeat(rig: LockedRig, scene: { children: readonly THREE.Object3D[] }) {
   for (const child of scene.children) {
-    if (child !== rig.root) {
-      breach("Etwas Fremdes steht im Raum.", "Something else is standing in the room.");
+    if (child === rig.root) continue;
+    if (usesSignalRed(child)) {
+      breach(
+        "Signalrot #FF3B4E gehört nicht ins Zielbild.",
+        "Signal red #FF3B4E is not part of the target.",
+      );
     }
+    if (isFloorReflection(child)) continue;
+    const intruder = sceneIntruder(child);
+    breach(intruder.de, intruder.en);
   }
 }
 
@@ -1135,6 +1245,8 @@ export function assertClearLock(
     outputColorSpace?: string;
     getClearColor: (target: THREE.Color) => THREE.Color;
     getClearAlpha: () => number;
+    bloom?: unknown;
+    composer?: { passes?: readonly { constructor?: { name?: string }; name?: string }[] };
   },
   scene: VoidScene,
 ) {
@@ -1162,10 +1274,7 @@ export function assertClearLock(
     );
   }
   if (gl.outputColorSpace !== undefined && gl.outputColorSpace !== THREE.SRGBColorSpace) {
-    breach(
-      "Der Farbraum färbt die Palette um.",
-      "The color space recolors the palette.",
-    );
+    breach("Der Farbraum färbt die Palette um.", "The color space recolors the palette.");
   }
   if (scene.background) {
     breach(
@@ -1177,23 +1286,97 @@ export function assertClearLock(
     breach("Nebel liegt über dem Void.", "Fog covers the void.");
   }
   if (scene.overrideMaterial) {
-    breach(
-      "Ein Ersatzmaterial überdeckt die Figur.",
-      "An override material covers the figure.",
-    );
+    breach("Ein Ersatzmaterial überdeckt die Figur.", "An override material covers the figure.");
   }
   if (scene.environment) {
-    breach(
-      "Eine Umgebungskarte liegt über dem Void.",
-      "An environment map covers the void.",
-    );
+    breach("Eine Umgebungskarte liegt über dem Void.", "An environment map covers the void.");
   }
+  if (bloomAttached(gl, scene)) {
+    breach("Bloom liegt über der Figur.", "Bloom covers the figure.");
+  }
+}
+
+function bloomAttached(gl: object, scene: object): boolean {
+  const renderer = gl as {
+    bloom?: unknown;
+    composer?: { passes?: readonly { constructor?: { name?: string }; name?: string }[] };
+  };
+  if (renderer.bloom) return true;
+  const passes = renderer.composer?.passes;
+  if (
+    passes?.some((pass) => /bloom/i.test(`${pass?.constructor?.name ?? ""} ${pass?.name ?? ""}`))
+  ) {
+    return true;
+  }
+  const view = scene as { userData?: { bloom?: unknown } };
+  return view.userData?.bloom != null;
+}
+
+/**
+ * Horizon tilt, not Euler Z. A yawed lookAt writes Z even when the horizon is level.
+ * Plain cameras without a quaternion keep the old Z threshold.
+ */
+function cameraRolled(camera: {
+  rotation: { z: number };
+  quaternion?: { x: number; y: number; z: number; w: number };
+  up?: { x: number; y: number; z: number };
+}): boolean {
+  const q = camera.quaternion;
+  if (
+    q &&
+    Number.isFinite(q.x) &&
+    Number.isFinite(q.y) &&
+    Number.isFinite(q.z) &&
+    Number.isFinite(q.w)
+  ) {
+    const fx = -(2 * (q.x * q.z + q.w * q.y));
+    const fy = -(2 * (q.y * q.z - q.w * q.x));
+    const fz = -(1 - 2 * (q.x * q.x + q.y * q.y));
+    const yx = 2 * (q.x * q.y - q.w * q.z);
+    const yy = 1 - 2 * (q.x * q.x + q.z * q.z);
+    const yz = 2 * (q.y * q.z + q.w * q.x);
+    const up = camera.up ?? { x: 0, y: 1, z: 0 };
+    const along = up.x * fx + up.y * fy + up.z * fz;
+    const px = up.x - along * fx;
+    const py = up.y - along * fy;
+    const pz = up.z - along * fz;
+    const pLen = Math.hypot(px, py, pz);
+    const yLen = Math.hypot(yx, yy, yz);
+    if (pLen < 1e-8 || yLen < 1e-8) return true;
+    const cos = (yx * px + yy * py + yz * pz) / (yLen * pLen);
+    return cos < Math.cos(1e-2);
+  }
+  return !Number.isFinite(camera.rotation.z) || Math.abs(camera.rotation.z) > 1e-2;
+}
+
+function orbitDriven(camera: object): boolean {
+  const view = camera as {
+    constructor?: { name?: string };
+    enableRotate?: boolean;
+    target?: unknown;
+    controls?: { constructor?: { name?: string }; enableRotate?: boolean; target?: unknown };
+    userData?: {
+      controls?: { constructor?: { name?: string }; enableRotate?: boolean; target?: unknown };
+    };
+  };
+  const named = (value: { constructor?: { name?: string } } | undefined) =>
+    /OrbitControls/i.test(value?.constructor?.name ?? "");
+  const shaped = (value: { enableRotate?: boolean; target?: unknown } | undefined) =>
+    value?.enableRotate != null && value.target != null;
+  if (named(view) || shaped(view)) return true;
+  return (
+    named(view.controls) ||
+    shaped(view.controls) ||
+    named(view.userData?.controls) ||
+    shaped(view.userData?.controls)
+  );
 }
 
 export function assertFrontalCamera(camera: {
   fov?: number;
   position: { x: number };
   rotation: { y?: number; z: number };
+  quaternion?: { x: number; y: number; z: number; w: number };
   up?: { x: number; y: number; z: number };
 }) {
   if (camera.fov !== undefined) {
@@ -1204,15 +1387,16 @@ export function assertFrontalCamera(camera: {
       );
     }
   }
-  if (!Number.isFinite(camera.position.x) || Math.abs(camera.position.x) > 1e-3) {
-    breach("Kamera ist nicht frontal.", "Camera is not straight-on.");
+  if (!Number.isFinite(camera.position.x)) {
+    breach("Kameraposition ist ungültig.", "Camera position is invalid.");
   }
-  if (camera.rotation.y !== undefined) {
-    if (!Number.isFinite(camera.rotation.y) || Math.abs(camera.rotation.y) > 1e-2) {
-      breach("Kamera blickt seitlich.", "Camera is yawed off the figure.");
-    }
+  if (camera.rotation.y !== undefined && !Number.isFinite(camera.rotation.y)) {
+    breach("Kameradrehung ist ungültig.", "Camera yaw is invalid.");
   }
-  if (!Number.isFinite(camera.rotation.z) || Math.abs(camera.rotation.z) > 1e-2) {
+  if (orbitDriven(camera)) {
+    breach("Orbit-Steuerung ist abgelehnt.", "Orbit controls are refused.");
+  }
+  if (cameraRolled(camera)) {
     breach("Kamera ist gerollt.", "Camera is rolled.");
   }
   if (camera.up) {
