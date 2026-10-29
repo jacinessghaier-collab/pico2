@@ -578,13 +578,14 @@ function centerAtArmpit() {
 
 /**
  * Upper-arm station in chest space.
- * Through the deltoid the tube is seated in the cap (the part inside the shell is
- * not drawn). From the armpit down the center stays put, so the waist leaves a gap.
+ * Through the deltoid the tube is seated on the shell. The fade ends at the
+ * shell, so the crescent outside it stays drawn and the cap has no dark slot.
+ * From the armpit down the center stays put, so the waist leaves a gap.
  */
 export function upperArmStation(t: number) {
   const s = armSample(t);
   const join = hermite(ARMPIT_Y, ARMPIT_Y + 0.08, s.y);
-  const seated = s.torsoHalf + s.r * 0.32;
+  const seated = s.torsoHalf - s.r * 0.2;
   const clear = Math.max(s.torsoHalf + s.r + 0.002, centerAtArmpit());
   const center = seated * join + clear * (1 - join);
   return { r: s.r, y: s.y, torsoHalf: s.torsoHalf, center, outer: center + s.r };
@@ -635,6 +636,21 @@ function shinSection(t: number, a: number, r: number, _side: 1 | -1) {
   return { x: c * xRad, z: front * zFront - back * zBack };
 }
 
+/**
+ * Thigh cross-section. Outer belly in the upper third, inner edge tapering
+ * toward the knee. `side` puts the belly on the lateral face so the pair mirrors.
+ */
+function thighSection(t: number, a: number, r: number, side: 1 | -1) {
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  const vastus = Math.exp(-((t - 0.24) ** 2) / 0.035);
+  const toKnee = hermite(0.42, 0.9, t);
+  const lateral = Math.max(0, c * side);
+  const medial = Math.max(0, -c * side);
+  const xMul = 1 + 0.33 * vastus * lateral - 0.36 * toKnee * medial;
+  return { x: c * r * xMul, z: s * r * 0.84 };
+}
+
 /** Wider Fresnel on torso and limbs. Skull and the unmarked glass stay at 0. */
 function markBodyRim(mesh: THREE.Mesh) {
   const count = mesh.geometry.getAttribute("position").count;
@@ -678,11 +694,11 @@ function skinFade(x: number, y: number, z: number) {
   return hermite(0.62, 1.04, e);
 }
 
-/** Upper arm: stay undrawn until the vertex is outside the torso ellipse. */
+/** Upper arm: a soft edge across the shell, not a hard cut that leaves a black notch. */
 function armSkinFade(x: number, y: number, z: number) {
   const shell = torsoShellAt(y);
   const e = (x * x) / (shell.x * shell.x) + (z * z) / (shell.z * shell.z);
-  return hermite(1, 1.1, e);
+  return hermite(0.9, 1, e);
 }
 
 type TubeOpts = {
@@ -941,6 +957,34 @@ function knot(u: number, pairs: Array<[number, number]>) {
   return pairs[pairs.length - 1][1];
 }
 
+/** Stacked rings. The seam sine is snapped so the join does not pinch. */
+function ellipseRings(
+  rings: number,
+  seg: number,
+  at: (ring: number, j: number, cos: number, sin: number) => [number, number, number],
+) {
+  const position: number[] = [];
+  const index: number[] = [];
+  const row = seg + 1;
+  for (let i = 0; i < rings; i++) {
+    for (let j = 0; j <= seg; j++) {
+      const ang = (j / seg) * Math.PI * 2;
+      let s = Math.sin(ang);
+      if (j === 0 || j === seg || Math.abs(s) < 1e-7) s = 0;
+      const [x, y, z] = at(i, j, Math.cos(ang), s);
+      position.push(x, y, z);
+    }
+  }
+  for (let i = 0; i < rings - 1; i++) {
+    for (let j = 0; j < seg; j++) {
+      const a = i * row + j;
+      const b = a + row;
+      index.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  }
+  return { position, index, row };
+}
+
 /**
  * Foot along its length. The ankle column meets the shin; the sole is a
  * heel, a small arch, a ball, and a low toe pad. Ends are capped.
@@ -948,10 +992,7 @@ function knot(u: number, pairs: Array<[number, number]>) {
 function footLathe() {
   const seg = 24;
   const samples = 42;
-  const pos: number[] = [];
-  const idx: number[] = [];
   let minY = Infinity;
-  const row = seg + 1;
   const widthK: Array<[number, number]> = [
     [0, 0.01],
     [0.1, 0.034],
@@ -979,7 +1020,7 @@ function footLathe() {
     [1, 0],
   ];
 
-  for (let i = 0; i < samples; i++) {
+  const built = ellipseRings(samples, seg, (i, j) => {
     const u = i / (samples - 1);
     const z = -0.06 + u * 0.245;
     const halfW = knot(u, widthK);
@@ -988,37 +1029,27 @@ function footLathe() {
     const capH = Math.min(halfW, instep);
     const wall = instep - capH;
     const q = seg / 4;
-    for (let j = 0; j <= seg; j++) {
-      let x: number;
-      let y: number;
-      if (j <= q) {
-        x = halfW;
-        y = sole + (j / q) * wall;
-      } else if (j <= 2 * q) {
-        const a = ((j - q) / q) * Math.PI;
-        x = Math.cos(a) * halfW;
-        y = sole + wall + Math.sin(a) * capH;
-      } else if (j <= 3 * q) {
-        x = -halfW;
-        y = sole + wall * (1 - (j - 2 * q) / q);
-      } else {
-        const u = (j - 3 * q) / (seg - 3 * q);
-        x = -halfW + u * 2 * halfW;
-        y = sole;
-      }
-      if (y < minY) minY = y;
-      pos.push(x, y, z);
+    let x: number;
+    let y: number;
+    if (j <= q) {
+      x = halfW;
+      y = sole + (j / q) * wall;
+    } else if (j <= 2 * q) {
+      const a = ((j - q) / q) * Math.PI;
+      x = Math.cos(a) * halfW;
+      y = sole + wall + Math.sin(a) * capH;
+    } else if (j <= 3 * q) {
+      x = -halfW;
+      y = sole + wall * (1 - (j - 2 * q) / q);
+    } else {
+      const s = (j - 3 * q) / (seg - 3 * q);
+      x = -halfW + s * 2 * halfW;
+      y = sole;
     }
-  }
-
-  const rings = samples;
-  for (let i = 0; i < rings - 1; i++) {
-    for (let j = 0; j < seg; j++) {
-      const a = i * row + j;
-      const b = a + row;
-      idx.push(a, b, a + 1, b, b + 1, a + 1);
-    }
-  }
+    if (y < minY) minY = y;
+    return [x, y, z];
+  });
+  const { position: pos, index: idx, row } = built;
   const cap = (ringIndex: number, dir: -1 | 1) => {
     const base = ringIndex * row;
     let yAvg = 0;
@@ -1039,7 +1070,7 @@ function footLathe() {
     }
   };
   cap(0, -1);
-  cap(rings - 1, 1);
+  cap(samples - 1, 1);
 
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
@@ -1094,13 +1125,13 @@ const SHELL_LATHE: Array<[number, number]> = [
   [0.04, -0.4],
   [0.062, -0.34],
   [0.11, -0.3],
-  [0.168, -0.24],
-  [0.172, -0.2],
+  [0.186, -0.24],
+  [0.19, -0.2],
   [0.15, -0.12],
   [0.122, -0.04],
   [0.132, 0.04],
   [0.168, 0.1],
-  [0.178, 0.15],
+  [0.192, 0.15],
   [0.17, 0.2],
   [0.174, 0.24],
   [0.178, 0.258],
@@ -1129,30 +1160,13 @@ function shellDepth(y: number) {
 
 /** Elliptical torso. X is the front silhouette; Z is the ribcage depth. */
 function ellipticTorso() {
-  const seg = 28;
-  const pos: number[] = [];
-  const idx: number[] = [];
-  const row = seg + 1;
-  for (let i = 0; i < SHELL_LATHE.length; i++) {
+  const { position, index } = ellipseRings(SHELL_LATHE.length, 28, (i, _j, c, s) => {
     const [r, y] = SHELL_LATHE[i];
-    const zr = shellDepth(y) / SHELL_SZ;
-    for (let j = 0; j <= seg; j++) {
-      const a = (j / seg) * Math.PI * 2;
-      let s = Math.sin(a);
-      if (j === 0 || j === seg || Math.abs(s) < 1e-7) s = 0;
-      pos.push(Math.cos(a) * r, y, s * zr);
-    }
-  }
-  for (let i = 0; i < SHELL_LATHE.length - 1; i++) {
-    for (let j = 0; j < seg; j++) {
-      const a = i * row + j;
-      const b = a + row;
-      idx.push(a, b, a + 1, b, b + 1, a + 1);
-    }
-  }
+    return [c * r, y, s * (shellDepth(y) / SHELL_SZ)];
+  });
   const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-  geo.setIndex(idx);
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(position, 3));
+  geo.setIndex(index);
   geo.computeVertexNormals();
   return geo;
 }
@@ -1165,8 +1179,8 @@ const BLEND = { elbow: 0.14, knee: 0.14, shoulder: 0.02, hip: 0.05 };
 const UPPER_RADII = [0.056, 0.06, 0.058, 0.052, 0.046, 0.042, 0.038, 0.036, 0.034];
 /** Elbow into a wrist narrow enough to enter the hand, not a ball. */
 const FORE_RADII = [0.034, 0.032, 0.03, 0.028, 0.026, 0.024, 0.022];
-/** Widest at the hip, then down to the knee the calf already meets. */
-const THIGH_RADII = [0.064, 0.066, 0.06, 0.054, 0.048, 0.044, 0.042, 0.042, 0.042];
+/** Quad holds through the upper third, then narrows into the knee. */
+const THIGH_RADII = [0.06, 0.066, 0.066, 0.06, 0.052, 0.046, 0.044, 0.042, 0.042];
 
 /**
  * Front half-width the upper arm is allowed to reach.
@@ -2486,9 +2500,6 @@ export function createKushim(): Rig {
     const hand = new THREE.Group();
     hand.position.x = side * -foreInset;
     wrist.add(hand);
-    const palmGeo = new THREE.BufferGeometry();
-    const palmSeg = 16;
-    const palmRow = palmSeg + 1;
     const palmRings: Array<[number, number, number]> = [
       [0.022, 0.012, 0.008],
       [0.022, 0.011, -0.018],
@@ -2497,25 +2508,13 @@ export function createKushim(): Rig {
       [0.022, 0.007, -0.09],
       [0.014, 0.005, -0.102],
     ];
-    const palmPos: number[] = [];
-    const palmIdx: number[] = [];
-    for (const [rx, rz, y] of palmRings) {
-      for (let j = 0; j <= palmSeg; j++) {
-        const a = (j / palmSeg) * Math.PI * 2;
-        let s = Math.sin(a);
-        if (j === 0 || j === palmSeg || Math.abs(s) < 1e-7) s = 0;
-        palmPos.push(Math.cos(a) * rx, y, s * rz);
-      }
-    }
-    for (let i = 0; i < palmRings.length - 1; i++) {
-      for (let j = 0; j < palmSeg; j++) {
-        const a = i * palmRow + j;
-        const b = a + palmRow;
-        palmIdx.push(a, b, a + 1, b, b + 1, a + 1);
-      }
-    }
-    palmGeo.setAttribute("position", new THREE.Float32BufferAttribute(palmPos, 3));
-    palmGeo.setIndex(palmIdx);
+    const palm = ellipseRings(palmRings.length, 16, (i, _j, c, s) => {
+      const [rx, rz, y] = palmRings[i];
+      return [c * rx, y, s * rz];
+    });
+    const palmGeo = new THREE.BufferGeometry();
+    palmGeo.setAttribute("position", new THREE.Float32BufferAttribute(palm.position, 3));
+    palmGeo.setIndex(palm.index);
     palmGeo.computeVertexNormals();
     transmit(markBodyRim(solid(hand, palmGeo, glass)));
     const fingers: THREE.Group[] = [];
@@ -2562,6 +2561,7 @@ export function createKushim(): Rig {
         LIMB.thigh.inset,
         BLEND.hip,
         BLEND.knee,
+        { section: (t, a, r) => thighSection(t, a, r, side) },
       ),
       glass,
     )));
