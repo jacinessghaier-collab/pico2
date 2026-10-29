@@ -27,32 +27,8 @@ export type Rig = {
   fingersR: THREE.Group[];
   glass: THREE.ShaderMaterial;
   nerve: THREE.ShaderMaterial;
-  signal: THREE.ShaderMaterial;
-  ring: THREE.Points;
-  ringAngles: Float32Array;
-  ringJitter: Float32Array;
-  core: THREE.Mesh;
   dispose: () => void;
 };
-
-/**
- * Signal-core transform. The glass shell uses `shellVert`: that is where the
- * calf bend and the transmission mask live. This stage stays plain so the
- * red core does not inherit the body glass.
- */
-const glassVert = /* glsl */ `
-attribute float aFade;
-varying vec3 vN;
-varying vec3 vW;
-varying float vFade;
-void main() {
-  vec4 world = modelMatrix * vec4(position, 1.0);
-  vW = world.xyz;
-  vN = normalize(mat3(modelMatrix) * normal);
-  vFade = aFade;
-  gl_Position = projectionMatrix * viewMatrix * world;
-}
-`;
 
 /**
  * Oblique-rear lobe. `uRimPower` stays the frontal exponent.
@@ -286,26 +262,6 @@ export function bendCalfNormal(
   return { x: mx / ml, y: my / ml, z: mz / ml };
 }
 
-const coreFrag = /* glsl */ `
-uniform vec3 uColor;
-uniform vec3 uCore;
-uniform float uBoost;
-uniform float uShow;
-varying vec3 vN;
-varying vec3 vW;
-varying float vFade;
-void main() {
-  vec3 viewDir = normalize(cameraPosition - vW);
-  float fres = pow(1.0 - abs(dot(normalize(vN), viewDir)), 2.35);
-  float spine = exp(-abs(vW.x) * 14.0) * smoothstep(0.35, 1.15, vW.y) * smoothstep(1.75, 1.35, vW.y);
-  vec3 chest = vW - vec3(0.0, 1.34, 0.06);
-  float star = exp(-dot(chest, chest) * 18.0);
-  float alpha = (fres * 0.95 * uBoost + 0.07 * uBoost + spine * 0.55 + star * 0.7) * uShow * vFade;
-  if (alpha < 0.015) discard;
-  gl_FragColor = vec4(mix(uColor, uCore, fres), alpha);
-}
-`;
-
 const nerveVert = /* glsl */ `
 attribute vec3 aDir;
 attribute float aSide;
@@ -507,7 +463,6 @@ function glassMaterial(boost: number, role: "glass" | "glass-bright") {
 }
 
 function nerveMaterial(color: string, speed: number) {
-  const signal = color === LOCK.signal;
   const material = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -515,20 +470,17 @@ function nerveMaterial(color: string, speed: number) {
     side: THREE.DoubleSide,
     uniforms: {
       uColor: { value: new THREE.Color(color) },
-      uCore: { value: new THREE.Color(signal ? "#FF8A2A" : LOCK.filamentKern) },
+      uCore: { value: new THREE.Color(LOCK.filamentKern) },
       uTime: { value: 0 },
       uSpeed: { value: speed },
       uDensity: { value: 1 },
-      uShow: { value: signal ? 0 : 1 },
+      uShow: { value: 1 },
     },
     vertexShader: nerveVert,
     fragmentShader: nerveFrag,
   });
-  sealShaderChannels(
-    material,
-    signal ? ["uColor", "uCore", "uSpeed"] : ["uColor", "uCore", "uSpeed", "uShow"],
-  );
-  markMaterial(material, signal ? "signal" : "nerve");
+  sealShaderChannels(material, ["uColor", "uCore", "uSpeed", "uShow"]);
+  markMaterial(material, "nerve");
   return material;
 }
 
@@ -630,16 +582,18 @@ function upperCenter(t: number) {
 }
 
 /**
- * Glass upper arm. The lateral edge hangs straight from the acromion.
- * The elbow joint sits further out; the forearm tucks in to meet this edge.
+ * Glass upper arm. Widest at the deltoid, tapering to the elbow.
+ * The lateral peak meets the acromion; the rest of the limb is inside it.
  */
 function upperGlass(t: number) {
   const src = upperCenter(t);
   const shoulderHalf = shellRadius(LOCK.proportions.shoulderLocalY) * SHELL_SX;
+  const peak = Math.max(...UPPER_RADII);
+  const hang = shoulderHalf - peak;
   const fitR = src.r;
-  let center = shoulderHalf - fitR;
+  let center = hang;
   const torsoHalf = shellRadius(src.y) * SHELL_SX;
-  if (center < torsoHalf + 0.01) center = torsoHalf + 0.01;
+  if (center < torsoHalf + 0.008) center = torsoHalf + 0.008;
   if (center + fitR > shoulderHalf) center = shoulderHalf - fitR;
   return { r: fitR, y: src.y, center };
 }
@@ -670,9 +624,7 @@ function shinSection(t: number, a: number, r: number, _side: 1 | -1) {
   const soleus = Math.exp(-((t - 0.62) ** 2) / 0.055);
   const live = hermite(0.1, 0.28, t) * (1 - hermite(0.72, 0.9, t));
   const mass = live * (gastroc * 0.7 + soleus * 0.38);
-  // Malleoli are a few millimetres and die before the heel.
-  const malleolus = hermite(0.88, 0.95, t) * (1 - hermite(0.97, 1, t));
-  const xRad = r * (0.92 + malleolus * 0.05);
+  const xRad = r * 0.92;
   const zFront = r * (0.72 - 0.06 * mass);
   const zBack = r * (0.94 + 0.5 * mass);
   return { x: c * xRad, z: front * zFront - back * zBack };
@@ -858,6 +810,8 @@ function fadeTorsoSides(geo: THREE.BufferGeometry) {
     // The neck continues inside the skull. Fade it so the open lathe
     // does not draw a second ring under the jaw.
     if (y > 0.44) cover = Math.min(cover, hermite(0.52, 0.44, y));
+    // The pelvis closes between the thighs. An open bottom ring is a skirt hem.
+    if (y < -0.3) cover = Math.min(cover, hermite(-0.46, -0.3, y));
     // Only the shell the arm already covers. The front of the chest stays,
     // so the pec rim does not invert.
     const yBot = yTop - P.upperArm;
@@ -905,9 +859,9 @@ function shoulderSlope(side: 1 | -1) {
   const pos: number[] = [];
   const fade: number[] = [];
   const idx: number[] = [];
-  const p0 = new THREE.Vector3(0.14, 0.3, 0.012);
-  const p1 = new THREE.Vector3(0.2, 0.26, 0.016);
-  const p2 = new THREE.Vector3(0.17, 0.14, 0.006);
+  const p0 = new THREE.Vector3(0.1, 0.36, 0.02);
+  const p1 = new THREE.Vector3(0.19, 0.28, 0.03);
+  const p2 = new THREE.Vector3(0.16, 0.12, 0.012);
   const c = new THREE.Vector3();
   const tang = new THREE.Vector3();
   const sideV = new THREE.Vector3();
@@ -930,7 +884,7 @@ function shoulderSlope(side: 1 | -1) {
     if (sideV.lengthSq() < 1e-8) sideV.set(1, 0, 0);
     sideV.normalize();
     bin.crossVectors(sideV, tang).normalize();
-    const rad = 0.012 + Math.sin(Math.PI * t) * 0.014;
+    const rad = 0.02 + Math.sin(Math.PI * t) * 0.028;
     const end = hermite(0, 0.18, t) * hermite(1, 0.72, t);
     for (let j = 0; j <= seg; j++) {
       const a = (j / seg) * Math.PI * 2;
@@ -965,36 +919,32 @@ const SOLE_KISS = 0.014;
  * The sole dips at heel and ball and lifts through the arch.
  */
 function footLathe() {
-  const steps = 32;
-  const seg = 20;
-  const z0 = -0.046;
-  const z1 = 0.168;
+  const steps = 28;
+  const seg = 16;
+  const z0 = -0.05;
+  const z1 = 0.2;
   const pos: number[] = [];
   const idx: number[] = [];
   let minY = Infinity;
   for (let i = 0; i < steps; i++) {
     const u = i / (steps - 1);
-    const end = Math.min(hermite(0, 0.1, u), hermite(1, 0.58, u));
-    const heel = Math.exp(-((u - 0.14) ** 2) / 0.012);
-    const arch = Math.exp(-((u - 0.46) ** 2) / 0.016);
-    const ball = Math.exp(-((u - 0.72) ** 2) / 0.011);
-    const ankle = Math.exp(-((u - 0.2) ** 2) / 0.014);
-    const width = (0.02 + 0.01 * heel + 0.016 * ball + 0.01 * ankle) * (0.22 + 0.78 * end);
-    const height =
-      (0.016 + 0.042 * heel + 0.014 * ball + 0.014 * ankle) * (0.16 + 0.84 * end);
-    const toeLift = hermite(0.68, 1, u) * 0.016 * end;
-    const sole = -0.03 + 0.024 * arch * end + toeLift;
+    const end = Math.min(hermite(0, 0.08, u), hermite(1, 0.62, u));
+    const heel = Math.exp(-((u - 0.16) ** 2) / 0.014);
+    const arch = Math.exp(-((u - 0.42) ** 2) / 0.02);
+    const ball = Math.exp(-((u - 0.7) ** 2) / 0.012);
+    const width = (0.03 + 0.008 * heel + 0.014 * ball) * (0.45 + 0.55 * end);
+    const instep = (0.016 + 0.02 * heel + 0.01 * ball) * (0.4 + 0.6 * end);
+    const soleLift = 0.01 * arch * end;
     const z = z0 + (z1 - z0) * u;
     for (let j = 0; j <= seg; j++) {
       const ang = (j / seg) * Math.PI * 2;
       const cx = Math.cos(ang);
-      // sin(2π) is a hair below zero, which used to pinch only the seam vertex.
       let sy = Math.sin(ang);
+      if (j === seg) sy = 0;
       if (Math.abs(sy) < 1e-7) sy = 0;
-      const yk = sy < 0 ? -Math.pow(-sy, 0.92) : sy;
-      const y = sole + ((yk + 1) * 0.5) * height;
-      const pinch = 1 - 0.08 * Math.max(0, -sy);
-      const x = cx * width * pinch;
+      // Flat sole. The top is the instep. No ankle ring.
+      const y = sy >= 0 ? soleLift + sy * instep : soleLift + sy * 0.004;
+      const x = cx * width;
       if (y < minY) minY = y;
       pos.push(x, y, z);
     }
@@ -1057,26 +1007,26 @@ const HIP_X = 0.11;
  * narrower than chest and iliac. No shoulder shelf.
  */
 const SHELL_LATHE: Array<[number, number]> = [
-  [0.1, -0.36],
-  [0.136, -0.3],
-  [0.16, -0.23],
-  [0.154, -0.15],
-  [0.134, -0.07],
-  [0.118, 0.01],
-  [0.13, 0.08],
-  [0.15, 0.15],
-  [0.158, 0.2],
-  [0.186, 0.24],
-  [0.206, 0.265],
+  [0.02, -0.46],
+  [0.045, -0.4],
+  [0.085, -0.35],
+  [0.125, -0.3],
+  [0.155, -0.24],
+  [0.148, -0.16],
+  [0.126, -0.06],
+  [0.108, 0.02],
+  [0.126, 0.1],
+  [0.15, 0.17],
+  [0.172, 0.22],
+  [0.196, 0.255],
   [0.21, 0.28],
-  [0.206, 0.3],
-  [0.17, 0.325],
-  [0.12, 0.35],
-  [0.078, 0.375],
-  [0.056, 0.4],
-  [0.048, 0.44],
-  [0.044, 0.48],
-  [0.042, 0.52],
+  [0.196, 0.305],
+  [0.15, 0.33],
+  [0.098, 0.355],
+  [0.066, 0.38],
+  [0.05, 0.42],
+  [0.044, 0.47],
+  [0.04, 0.52],
 ];
 /** Crossfade length shared by a parent distal end and its child proximal end. */
 const BLEND = { elbow: 0.14, knee: 0.14, shoulder: 0.02, hip: 0.05 };
@@ -1092,7 +1042,7 @@ const THIGH_RADII = [0.096, 0.104, 0.106, 0.088, 0.066, 0.048, 0.042, 0.042, 0.0
  * Knee, then the bone radius the calf section builds on.
  * Belly in the upper third, smooth taper to the ankle. No spindle.
  */
-const SHIN_RADII = [0.044, 0.05, 0.058, 0.066, 0.07, 0.064, 0.052, 0.044, 0.038];
+const SHIN_RADII = [0.044, 0.05, 0.058, 0.066, 0.07, 0.062, 0.05, 0.038, 0.03];
 const LIMB = {
   upper: { r0: UPPER_RADII[0], r1: UPPER_RADII[UPPER_RADII.length - 1], inset: 0.06 },
   fore: { r0: FORE_RADII[0], r1: FORE_RADII[FORE_RADII.length - 1], inset: 0 },
@@ -2082,39 +2032,35 @@ function fillCalf(ribbon: Ribbon, side: 1 | -1) {
   }
 }
 
-const FINGER_SPECS = [
-  { x: -0.03, z: 0.02, len: 0.052, rot: 0.5 },
-  { x: -0.012, z: 0.016, len: 0.074, rot: 0.08 },
-  { x: 0.004, z: 0.018, len: 0.082, rot: 0 },
-  { x: 0.018, z: 0.014, len: 0.076, rot: -0.08 },
-  { x: 0.03, z: 0.008, len: 0.062, rot: -0.16 },
-];
+const HAND_FINGERS = [
+  { x: -0.03, z: 0.002, len: 0.058 },
+  { x: -0.014, z: 0.006, len: 0.082 },
+  { x: 0.002, z: 0.008, len: 0.092 },
+  { x: 0.018, z: 0.005, len: 0.084 },
+  { x: 0.032, z: 0.0, len: 0.064 },
+] as const;
 
-function fillHand(ribbon: Ribbon, side: 1 | -1) {
-  for (let f = 0; f < FINGER_SPECS.length; f++) {
-    const spec = FINGER_SPECS[f];
-    const rot = spec.rot * side;
-    const reach = spec.len * 0.92;
-    const tipX = spec.x * side + Math.sin(rot) * reach;
-    const tipY = -0.02 - Math.cos(rot) * reach;
+function fillHand(ribbon: Ribbon, side: 1 | -1, ox: number) {
+  for (let f = 0; f < HAND_FINGERS.length; f++) {
+    const spec = HAND_FINGERS[f];
     pushCurve(
       ribbon,
-      7,
-      (u) => new THREE.Vector3(tipX * u, tipY * u, 0.006 + (spec.z - 0.006) * u),
-      0.16 + f * 0.04,
-      0.00016,
-      0.34,
-      0.22,
-      0.7,
+      8,
+      (u) => new THREE.Vector3(ox + side * spec.x, -0.09 - u * spec.len * 0.92, spec.z * u),
+      0.12 + f * 0.03,
+      0.00014,
+      0.3,
+      0.2,
+      0.55,
     );
   }
   pushCurve(
     ribbon,
     8,
-    (u) => new THREE.Vector3((-0.032 + u * 0.064) * side, -0.028, 0.014),
-    0.28,
-    0.00015,
-    0.26,
+    (u) => new THREE.Vector3(ox + (-0.032 + u * 0.064) * side, -0.05, 0.01),
+    0.22,
+    0.00014,
+    0.24,
     0.16,
     0.2,
   );
@@ -2209,10 +2155,10 @@ function fillHead(ribbon: Ribbon, radius: number) {
   };
 
   for (let i = 0; i < 22; i++) {
-    disc(radius * (0.82 + h() * 0.24), 0.16, 0.3 + h() * 0.08, 0.02 + h() * 0.04, 0.15);
+    disc(radius * (0.55 + h() * 0.16), 0.045, 0.22 + h() * 0.06, 0.02 + h() * 0.04, 0.35);
   }
-  for (let i = 0; i < 34; i++) {
-    disc(radius * (0.46 + h() * 0.18), 0.1, 0.36 + h() * 0.12, 0.05 + h() * 0.08, 0.35);
+  for (let i = 0; i < 28; i++) {
+    disc(radius * (0.32 + h() * 0.12), 0.028, 0.26 + h() * 0.08, 0.05 + h() * 0.08, 0.55);
   }
 }
 
@@ -2247,55 +2193,6 @@ function fillPelvis(ribbon: Ribbon, hipY: number) {
       0.00011,
       0.24,
       0.3,
-    );
-  }
-}
-
-function fillHotspot(ribbon: Ribbon) {
-  const cx = -0.05;
-  const cy = -0.04;
-  const cz = 0.04;
-  for (let i = 0; i < 16; i++) {
-    const phase = i * 2.399963;
-    const tilt = 0.35 + (i % 6) * 0.5;
-    pushCurve(
-      ribbon,
-      12,
-      (u) => {
-        const a = phase + u * Math.PI * (1.15 + (i % 3) * 0.4);
-        const rad = 0.032 + (i % 5) * 0.006;
-        const wob = Math.sin(u * Math.PI * 3 + i) * 0.01;
-        return new THREE.Vector3(
-          cx + Math.cos(a) * rad + Math.sin(tilt + u * 4) * wob,
-          cy + Math.sin(a * 0.85) * rad * 0.7 + Math.cos(u * 5 + phase) * 0.008,
-          cz + Math.sin(a + tilt) * rad * 0.62,
-        );
-      },
-      0.03 + (i % 5) * 0.02,
-      0.00105,
-      0.58,
-      0.58 + (i % 4) * 0.1,
-      0.08,
-    );
-  }
-  for (let i = 0; i < 6; i++) {
-    const ang = (i / 6) * Math.PI * 2 + 0.4;
-    pushCurve(
-      ribbon,
-      8,
-      (u) => {
-        const rad = 0.03 + Math.sin(u * Math.PI) * 0.035;
-        return new THREE.Vector3(
-          cx + Math.cos(ang + u * 2.2) * rad * 0.85,
-          cy - 0.01 - u * 0.07 + Math.sin(ang) * 0.01,
-          cz + Math.sin(ang + u) * rad * 0.55,
-        );
-      },
-      0.08,
-      0.0009,
-      0.5,
-      0.78,
-      0.35,
     );
   }
 }
@@ -2358,12 +2255,7 @@ export function createKushim(): Rig {
   const root = new THREE.Group();
   const glass = glassMaterial(1, "glass");
   const nerve = nerveMaterial(LOCK.filament, 0.34);
-  const signal = nerveMaterial(LOCK.signal, 0.2);
-  const disposables: Array<THREE.BufferGeometry | THREE.Material | THREE.Texture> = [
-    glass,
-    nerve,
-    signal,
-  ];
+  const disposables: Array<THREE.BufferGeometry | THREE.Material | THREE.Texture> = [glass, nerve];
 
   const chest = new THREE.Group();
   chest.position.y = P.chestY;
@@ -2500,100 +2392,68 @@ export function createKushim(): Rig {
     elbow.position.y = -P.upperArm;
     shoulder.add(elbow);
     const shoulderHalf = shellRadius(P.shoulderLocalY) * SHELL_SX;
-    const foreInset = Math.max(0, P.shoulderX - (shoulderHalf - LIMB.fore.r0));
+    const hang = shoulderHalf - Math.max(...UPPER_RADII);
+    const foreInset = Math.max(0, P.shoulderX - hang);
     const elbowBridge = markBodyRim(solid(elbow, jointBridge(LIMB.fore.r0, BLEND.elbow), glass));
     elbowBridge.position.x = side * -foreInset;
     transmit(markBodyRim(solid(
       elbow,
       organicTube(FORE_RADII, P.foreArm, side, foreInset, BLEND.elbow, 0, {
         join: "child",
-        tuckPower: 2,
+        tuckPower: 0,
       }),
       glass,
     )));
     const foreN = emptyRibbon();
-    fillLimb(foreN, P.foreArm, FORE_RADII, 0.07, 0.00009, 0.42, side * 2.1, side);
+    fillLimb(foreN, P.foreArm, FORE_RADII, 0.07, 0.00009, 0.42, side * 2.1, side, () => -side * foreInset);
     commitRibbon(elbow, foreN, nerve);
 
     const wrist = new THREE.Group();
     wrist.position.y = -P.foreArm;
     elbow.add(wrist);
-    const palm = transmit(markBodyRim(solid(
-      wrist,
-      new THREE.LatheGeometry(
-        [
-          new THREE.Vector2(0.01, 0),
-          new THREE.Vector2(0.026, -0.012),
-          new THREE.Vector2(0.024, -0.034),
-          new THREE.Vector2(0.014, -0.05),
-        ],
-        10,
-      ),
-      glass,
-    )));
-    palm.scale.set(1.15, 1, 0.42);
-    palm.position.set(0, -0.01, 0.01);
+    const hand = new THREE.Group();
+    hand.position.x = side * -foreInset;
+    wrist.add(hand);
+    const palmGeo = new THREE.LatheGeometry(
+      [
+        new THREE.Vector2(0.014, 0),
+        new THREE.Vector2(0.032, -0.022),
+        new THREE.Vector2(0.038, -0.052),
+        new THREE.Vector2(0.034, -0.08),
+        new THREE.Vector2(0.018, -0.09),
+      ],
+      10,
+    );
+    palmGeo.scale(1, 1, 0.46);
+    transmit(markBodyRim(solid(hand, palmGeo, glass)));
     const fingers: THREE.Group[] = [];
+    for (const spec of HAND_FINGERS) {
+      const finger = new THREE.Group();
+      finger.position.set(side * spec.x, -0.086, spec.z);
+      hand.add(finger);
+      transmit(markBodyRim(solid(
+        finger,
+        new THREE.LatheGeometry(
+          [
+            new THREE.Vector2(0.008, 0),
+            new THREE.Vector2(0.009, -spec.len * 0.35),
+            new THREE.Vector2(0.006, -spec.len * 0.78),
+            new THREE.Vector2(0.001, -spec.len),
+          ],
+          6,
+        ),
+        glass,
+      )));
+      fingers.push(finger);
+    }
     const handN = emptyRibbon();
-    fillHand(handN, side);
+    fillHand(handN, side, side * -foreInset);
     commitRibbon(wrist, handN, nerve);
     return { shoulder, elbow, wrist, fingers };
   }
 
   const left = makeArm(1);
   const right = makeArm(-1);
-
-  const signalNerves = emptyRibbon();
-  fillHotspot(signalNerves);
-  commitRibbon(right.shoulder, signalNerves, signal, 6);
-
-  const coreMat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    uniforms: {
-      uColor: { value: new THREE.Color(LOCK.signal) },
-      uCore: { value: new THREE.Color("#FFB15A") },
-      uBoost: { value: 2.4 },
-      uShow: { value: 0 },
-    },
-    vertexShader: glassVert,
-    fragmentShader: coreFrag,
-  });
-  sealShaderChannels(coreMat, ["uColor", "uCore", "uBoost"]);
-  markMaterial(coreMat, "core");
-  disposables.push(coreMat);
-  const core = solid(right.shoulder, new THREE.SphereGeometry(0.01, 16, 12), coreMat);
-  core.position.set(-0.05, -0.042, 0.042);
-  core.renderOrder = 4;
-
-  const ringCount = 96;
-  const ringAngles = new Float32Array(ringCount);
-  const ringJitter = new Float32Array(ringCount);
-  const ringPos = new Float32Array(ringCount * 3);
-  for (let i = 0; i < ringCount; i++) {
-    ringAngles[i] = (i / ringCount) * Math.PI * 2;
-    ringJitter[i] = 0.75 + ((i * 37) % 10) / 25;
-  }
-  const ringGeo = new THREE.BufferGeometry();
-  ringGeo.setAttribute("position", new THREE.BufferAttribute(ringPos, 3));
-  const ringMat = new THREE.PointsMaterial({
-    color: LOCK.signal,
-    size: 0.028,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    opacity: 0.8,
-    sizeAttenuation: true,
-  });
-  sealLookColor(ringMat.color);
-  markMaterial(ringMat, "ring");
-  const ring = new THREE.Points(ringGeo, ringMat);
-  ring.position.set(-0.042, -0.04, 0.034);
-  ring.frustumCulled = false;
-  ring.renderOrder = 5;
-  right.shoulder.add(ring);
-  disposables.push(ringGeo, ringMat);
 
   function makeLeg(side: 1 | -1) {
     const hip = new THREE.Group();
@@ -2632,7 +2492,7 @@ export function createKushim(): Rig {
     knee.position.y = -P.thigh;
     hip.add(knee);
     markBodyRim(solid(knee, jointBridge(LIMB.shin.r0, BLEND.knee), glass));
-    const shinGeo = organicTube(SHIN_RADII, P.shin, side, 0, BLEND.knee, 0.035, {
+    const shinGeo = organicTube(SHIN_RADII, P.shin, side, 0, BLEND.knee, 0.06, {
       join: "child",
       seg: 40,
       section: (t, a, r) => shinSection(t, a, r, side),
@@ -2691,11 +2551,6 @@ export function createKushim(): Rig {
     fingersR: right.fingers,
     glass,
     nerve,
-    signal,
-    ring,
-    ringAngles,
-    ringJitter,
-    core,
     dispose: () => {
       const seen = new Set<THREE.BufferGeometry | THREE.Material | THREE.Texture>();
       for (const item of disposables) {

@@ -238,4 +238,49 @@ describe("lathe shell", () => {
     const heads = (crown - sole) / (crown - chin);
     assert.ok(heads >= 7.5 && heads <= 8, `figure is ${heads.toFixed(2)} heads tall`);
   });
+
+  it("gives the hand about three quarters of a head and fades the pelvis hem", () => {
+    rig.root.updateMatrixWorld(true);
+    const skull = meshByKey(rig.root, "skull");
+    const spos = skull.geometry.getAttribute("position");
+    const sv = new THREE.Vector3();
+    let crown = -Infinity;
+    let chin = Infinity;
+    for (let i = 0; i < spos.count; i++) {
+      sv.fromBufferAttribute(spos as THREE.BufferAttribute, i).applyMatrix4(skull.matrixWorld);
+      crown = Math.max(crown, sv.y);
+      if (sv.z > 0.06 && sv.y < chin) chin = sv.y;
+    }
+    const head = crown - chin;
+    let reach = 0;
+    for (const wrist of [rig.wristL, rig.wristR]) {
+      wrist.updateWorldMatrix(true, true);
+      const origin = new THREE.Vector3();
+      wrist.getWorldPosition(origin);
+      wrist.traverse((obj) => {
+        const mesh = obj as Mesh;
+        if (!mesh.isMesh || mesh.material !== rig.glass) return;
+        const pos = mesh.geometry.getAttribute("position");
+        const v = new THREE.Vector3();
+        for (let i = 0; i < pos.count; i++) {
+          v.fromBufferAttribute(pos as THREE.BufferAttribute, i).applyMatrix4(mesh.matrixWorld);
+          reach = Math.max(reach, origin.y - v.y);
+        }
+      });
+    }
+    assert.ok(reach > head * 0.7 && reach < head * 0.95, `hand length ${reach} vs head ${head}`);
+
+    const torso = meshByKey(rig.root, "torso");
+    const fade = torso.geometry.getAttribute("aFade");
+    const pos = torso.geometry.getAttribute("position");
+    let hem = 0;
+    let hemFade = 0;
+    for (let i = 0; i < pos.count; i++) {
+      if (pos.getY(i) > -0.42) continue;
+      hem += 1;
+      hemFade = Math.max(hemFade, fade.getX(i));
+    }
+    assert.ok(hem > 10);
+    assert.ok(hemFade < 0.05, `pelvis hem still draws, fade ${hemFade}`);
+  });
 });

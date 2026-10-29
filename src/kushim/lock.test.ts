@@ -7,7 +7,7 @@ describe("visual lock", () => {
     assert.equal(LOCK.void, "#000000");
     assert.equal(LOCK.strom, "#3AD7FF");
     assert.equal(LOCK.kern, "#E7FBFF");
-    assert.equal(LOCK.signal, "#FF3B4E");
+    assert.equal("signal" in LOCK, false);
     assert.equal(LOCK.filament, "#D4F04A");
     assert.equal(LOCK.filamentKern, "#F7FFC2");
     assert.equal(LOCK.glass.fill, 0.004);
