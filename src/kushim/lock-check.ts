@@ -3,8 +3,7 @@
  * Legal motion (breath, gestures, filament 0.86–1, shoulder spark, viseme,
  * jaw drop, gaze, blink) is the envelope from tickKushim and lipsync —
  * update those constants in the same change.
- * Silhouette, palette, and the void stay put. 00-ZIEL has no red shoulder knot.
- * LOCK.signal stays the main value so the current figure is unchanged. It is not canon.
+ * Silhouette, palette, and the void stay put. 00-ZIEL has no shoulder knot.
  * A subtle floor reflection, foot glow, and a three-quarter camera are allowed.
  * The re-read also rejects a swapped shader or geometry, a reparented or hidden
  * part, a rolled or upside-down camera, and a scene that covers the void.
@@ -73,7 +72,7 @@ export const LOCK_CANON = {
     headLocalY: 0.48,
   },
   hipX: 0.11,
-  torsoScale: [1.05, 1, 0.72],
+  torsoScale: [1.05, 1, 0.78],
   skullScale: [1, 1.16, 1.02],
   glassBoost: 1,
   brightBoost: 0,
@@ -137,9 +136,6 @@ export type LockedRig = {
   eyes?: readonly THREE.Object3D[];
   glass: THREE.ShaderMaterial;
   nerve: THREE.ShaderMaterial;
-  signal: THREE.ShaderMaterial;
-  ring: THREE.Points;
-  core: THREE.Object3D;
 };
 
 type Phase = "build" | "live";
@@ -207,12 +203,6 @@ function mustHex(color: THREE.Color, expected: string, de: string, en: string) {
       `${en} is ${actual}, expected ${expected}.`,
     );
   }
-}
-
-/** Shoulder colors on the current figure stay sealed, including the deprecated signal. */
-function expectSealedColor(color: THREE.Color, de: string, en: string) {
-  if (!color?.isColor) breach(`${de} fehlt.`, `${en} is missing.`);
-  if (!Object.isFrozen(color)) breach(`${de} ist nicht eingefroren.`, `${en} is not frozen.`);
 }
 
 const SIGNAL_RED = "#FF3B4E";
@@ -318,14 +308,11 @@ export function assertLockTable() {
     breach("Die Hüllenwerte sind nicht eingefroren.", "The shell values are not frozen.");
   }
   const top = Object.keys(LOCK).sort().join(",");
-  if (top !== "aura,filament,filamentKern,glass,ground,kern,proportions,signal,strom,void") {
+  if (top !== "aura,filament,filamentKern,glass,ground,kern,proportions,strom,void") {
     breach("LOCK hat andere Schlüssel.", "LOCK has different keys.");
   }
-  if (LOCK.signal !== SIGNAL_RED) {
-    breach(
-      "Das veraltete Schultersignal weicht von main ab.",
-      "The deprecated shoulder signal drifted from main.",
-    );
+  if ("signal" in LOCK) {
+    breach("LOCK enthält noch das Schultersignal.", "LOCK still contains the shoulder signal.");
   }
   if (
     "signal" in LOCK_CANON ||
@@ -490,15 +477,6 @@ export function rememberBaseline(rig: LockedRig) {
   baselines.set(rig.root, { nodes, xform });
 }
 
-function under(obj: THREE.Object3D, ancestor: THREE.Object3D) {
-  let current: THREE.Object3D | null = obj;
-  while (current) {
-    if (current === ancestor) return true;
-    current = current.parent;
-  }
-  return false;
-}
-
 function auditChain(rig: LockedRig) {
   if (rig.chest.parent !== rig.root) {
     breach("Der Brustkorb hängt nicht mehr am Körper.", "The chest is no longer on the body.");
@@ -525,12 +503,6 @@ function auditChain(rig: LockedRig) {
   for (const [shoulder, elbow, wrist, de, en] of arms) {
     if (shoulder.parent !== rig.chest || elbow.parent !== shoulder || wrist.parent !== elbow)
       breach(de, en);
-  }
-  if (rig.core.parent !== rig.shoulderR || rig.ring.parent !== rig.shoulderR) {
-    breach(
-      "Das Schultersignal sitzt nicht auf Kushims rechter Schulter.",
-      "The shoulder signal is not on Kushim's right shoulder.",
-    );
   }
 }
 
@@ -653,51 +625,6 @@ function auditSkeleton(rig: LockedRig, phase: Phase) {
     }
   }
 
-  mustClose(rig.core.position.x, LOCK_CANON.corePos[0], "Signalkern X", "Signal core X");
-  mustClose(rig.core.position.y, LOCK_CANON.corePos[1], "Signalkern Y", "Signal core Y");
-  mustClose(rig.core.position.z, LOCK_CANON.corePos[2], "Signalkern Z", "Signal core Z");
-  mustClose(rig.core.rotation.x, 0, "Signalkern-Drehung", "Signal core rotation");
-  mustClose(rig.core.rotation.y, 0, "Signalkern-Drehung", "Signal core rotation");
-  mustClose(rig.core.rotation.z, 0, "Signalkern-Drehung", "Signal core rotation");
-  const minCore = 1 - LOCK_CANON.corePulse;
-  const maxCore = (1 + LOCK_CANON.corePulse) * LOCK_CANON.coreListen;
-  if (phase === "build") {
-    mustClose(rig.core.scale.x, 1, "Signalkern-Größe", "Signal core size");
-  } else if (rig.core.scale.x < minCore - EPS || rig.core.scale.x > maxCore + EPS) {
-    breach(
-      `Signalkern-Größe ${rig.core.scale.x} liegt außerhalb des Pulses.`,
-      `Signal core size ${rig.core.scale.x} is outside the pulse.`,
-    );
-  }
-  mustClose(
-    rig.core.scale.y,
-    rig.core.scale.x,
-    "Signalkern ungleichmäßig",
-    "Signal core is non-uniform",
-  );
-  mustClose(
-    rig.core.scale.z,
-    rig.core.scale.x,
-    "Signalkern ungleichmäßig",
-    "Signal core is non-uniform",
-  );
-
-  mustClose(rig.ring.position.x, LOCK_CANON.ringPos[0], "Signalring X", "Signal ring X");
-  mustClose(rig.ring.position.y, LOCK_CANON.ringPos[1], "Signalring Y", "Signal ring Y");
-  mustClose(rig.ring.position.z, LOCK_CANON.ringPos[2], "Signalring Z", "Signal ring Z");
-  const attr = rig.ring.geometry?.getAttribute("position");
-  if (!attr || attr.count !== LOCK_CANON.ringPoints) {
-    breach("Der Signalring hat nicht mehr 96 Funken.", "The signal ring no longer has 96 sparks.");
-  }
-  const array = attr.array as ArrayLike<number>;
-  for (let i = 0; i < attr.count; i++) {
-    const x = finite(array[i * 3], "Signalring ungültig.", "Signal ring is invalid.");
-    const y = finite(array[i * 3 + 1], "Signalring ungültig.", "Signal ring is invalid.");
-    const z = finite(array[i * 3 + 2], "Signalring ungültig.", "Signal ring is invalid.");
-    if (Math.hypot(x, y, z) > LOCK_CANON.sparkRadius) {
-      breach("Die Funken verlassen die Schulter.", "The sparks leave the shoulder.");
-    }
-  }
 }
 
 function auditMaterials(rig: LockedRig, phase: Phase) {
@@ -716,30 +643,16 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
   };
   expectRole(rig.glass, "glass", "Glasrolle fehlt.", "Glass role is missing.");
   expectRole(rig.nerve, "nerve", "Nervenrolle fehlt.", "Nerve role is missing.");
-  expectRole(rig.signal, "signal", "Signalrolle fehlt.", "Signal role is missing.");
-  const coreMat = (rig.core as THREE.Mesh).material;
-  const ringMat = rig.ring.material;
-  if (!coreMat || Array.isArray(coreMat) || !ringMat || Array.isArray(ringMat)) {
-    breach("Kern oder Ring hat kein einzelnes Material.", "Core or ring has no single material.");
-  }
-  expectRole(coreMat, "core", "Kernrolle fehlt.", "Core role is missing.");
-  expectRole(ringMat, "ring", "Ringrolle fehlt.", "Ring role is missing.");
 
   rig.root.traverse((obj) => {
     for (const material of materialsOf(obj)) {
       const role = roles.get(material);
       if (!role) breach("Unmarkiertes Material an der Figur.", "Unmarked material on the figure.");
+      if (role === "signal" || role === "core" || role === "ring") {
+        breach("Das Schultersignal ist noch an der Figur.", "The shoulder knot is still on the figure.");
+      }
       auditShader(material);
       bump(role, material);
-      if ((role === "signal" || role === "core" || role === "ring") && !under(obj, rig.shoulderR)) {
-        breach(
-          "Das Schultersignal sitzt nicht auf Kushims rechter Schulter.",
-          "The shoulder signal is not on Kushim's right shoulder.",
-        );
-      }
-      if ((role === "signal" || role === "core" || role === "ring") && under(obj, rig.shoulderL)) {
-        breach("Die linke Schulter trägt das Signal.", "The left shoulder carries the signal.");
-      }
     }
   });
 
@@ -755,9 +668,9 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
   expectCount("glass", 1);
   expectCount("glass-bright", 0);
   expectCount("nerve", 1);
-  expectCount("signal", 1);
-  expectCount("core", 1);
-  expectCount("ring", 1);
+  expectCount("signal", 0);
+  expectCount("core", 0);
+  expectCount("ring", 0);
   expectCount("sprite", 3);
   expectCount("aura", 1);
   expectCount("ground", 1);
@@ -797,53 +710,6 @@ function auditMaterials(rig: LockedRig, phase: Phase) {
     );
   }
   expectGlassLook(rig.nerve, "Nerven", "Nerves", THREE.DoubleSide);
-
-  expectSealedColor(colorSlot(rig.signal, "uColor"), "Signalfarbe", "Signal color");
-  expectSealedColor(colorSlot(rig.signal, "uCore"), "Signal-Kernlicht", "Signal nerve highlight");
-  mustClose(
-    numberSlot(rig.signal, "uSpeed", true),
-    LOCK_CANON.signalSpeed,
-    "Signalgeschwindigkeit",
-    "Signal speed",
-  );
-  mustClose(numberSlot(rig.signal, "uDensity", false), 1, "Signaldichte", "Signal density");
-  numberSlot(rig.signal, "uTime", false);
-  expectGlassLook(rig.signal, "Signalnerven", "Signal nerves", THREE.DoubleSide);
-
-  const coreShader = coreMat as THREE.ShaderMaterial;
-  expectSealedColor(colorSlot(coreShader, "uColor"), "Kernfarbe Signal", "Core signal color");
-  expectSealedColor(colorSlot(coreShader, "uCore"), "Kern-Glanz", "Core highlight");
-  mustClose(
-    numberSlot(coreShader, "uBoost", true),
-    LOCK_CANON.coreBoost,
-    "Kern-Boost",
-    "Core boost",
-  );
-  expectGlassLook(coreShader, "Signalkern", "Signal core", THREE.FrontSide);
-
-  const points = ringMat as THREE.PointsMaterial;
-  expectSealedColor(points.color, "Ringfarbe", "Ring color");
-  mustClose(points.size, LOCK_CANON.ringSize, "Ringgröße", "Ring size");
-  if (phase === "build")
-    mustClose(points.opacity, LOCK_CANON.ringOpacity, "Ringdeckkraft", "Ring opacity");
-  else if (points.opacity < -EPS || points.opacity > 1 + EPS) {
-    breach(
-      `Ringdeckkraft ${points.opacity} ist außerhalb 0–1.`,
-      `Ring opacity ${points.opacity} is outside 0–1.`,
-    );
-  }
-  if (
-    !points.transparent ||
-    points.depthWrite ||
-    points.blending !== THREE.AdditiveBlending ||
-    points.premultipliedAlpha ||
-    !points.sizeAttenuation
-  ) {
-    breach(
-      "Der Signalring hat seine Funkendarstellung verloren.",
-      "The signal ring lost its spark look.",
-    );
-  }
 
   rig.root.traverse((obj) => {
     for (const material of materialsOf(obj)) {
@@ -1182,7 +1048,7 @@ function auditBaseline(rig: LockedRig) {
     else if (obj.parent !== base.parent) {
       breach("Ein Teil wurde umgehängt.", "A part was reparented.");
     }
-    if (obj === rig.chest || obj === rig.core) continue;
+    if (obj === rig.chest) continue;
     if (obj === rig.lips || obj === rig.jaw || rig.eyes?.includes(obj)) {
       auditSpokenPart(obj, rig, baseline);
       continue;
@@ -1219,8 +1085,7 @@ export function assertRigLock(
     !rig.head ||
     !rig.shoulderR ||
     !rig.glass ||
-    !rig.nerve ||
-    !rig.signal
+    !rig.nerve
   ) {
     breach("Die Figur ist unvollständig.", "The figure is incomplete.");
   }

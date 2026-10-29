@@ -27,32 +27,8 @@ export type Rig = {
   fingersR: THREE.Group[];
   glass: THREE.ShaderMaterial;
   nerve: THREE.ShaderMaterial;
-  signal: THREE.ShaderMaterial;
-  ring: THREE.Points;
-  ringAngles: Float32Array;
-  ringJitter: Float32Array;
-  core: THREE.Mesh;
   dispose: () => void;
 };
-
-/**
- * Signal-core transform. The glass shell uses `shellVert`: that is where the
- * calf bend and the transmission mask live. This stage stays plain so the
- * red core does not inherit the body glass.
- */
-const glassVert = /* glsl */ `
-attribute float aFade;
-varying vec3 vN;
-varying vec3 vW;
-varying float vFade;
-void main() {
-  vec4 world = modelMatrix * vec4(position, 1.0);
-  vW = world.xyz;
-  vN = normalize(mat3(modelMatrix) * normal);
-  vFade = aFade;
-  gl_Position = projectionMatrix * viewMatrix * world;
-}
-`;
 
 /**
  * Oblique-rear lobe. `uRimPower` stays the frontal exponent.
@@ -286,26 +262,6 @@ export function bendCalfNormal(
   return { x: mx / ml, y: my / ml, z: mz / ml };
 }
 
-const coreFrag = /* glsl */ `
-uniform vec3 uColor;
-uniform vec3 uCore;
-uniform float uBoost;
-uniform float uShow;
-varying vec3 vN;
-varying vec3 vW;
-varying float vFade;
-void main() {
-  vec3 viewDir = normalize(cameraPosition - vW);
-  float fres = pow(1.0 - abs(dot(normalize(vN), viewDir)), 2.35);
-  float spine = exp(-abs(vW.x) * 14.0) * smoothstep(0.35, 1.15, vW.y) * smoothstep(1.75, 1.35, vW.y);
-  vec3 chest = vW - vec3(0.0, 1.34, 0.06);
-  float star = exp(-dot(chest, chest) * 18.0);
-  float alpha = (fres * 0.95 * uBoost + 0.07 * uBoost + spine * 0.55 + star * 0.7) * uShow * vFade;
-  if (alpha < 0.015) discard;
-  gl_FragColor = vec4(mix(uColor, uCore, fres), alpha);
-}
-`;
-
 const nerveVert = /* glsl */ `
 attribute vec3 aDir;
 attribute float aSide;
@@ -507,7 +463,6 @@ function glassMaterial(boost: number, role: "glass" | "glass-bright") {
 }
 
 function nerveMaterial(color: string, speed: number) {
-  const signal = color === LOCK.signal;
   const material = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -515,20 +470,17 @@ function nerveMaterial(color: string, speed: number) {
     side: THREE.DoubleSide,
     uniforms: {
       uColor: { value: new THREE.Color(color) },
-      uCore: { value: new THREE.Color(signal ? "#FF8A2A" : LOCK.filamentKern) },
+      uCore: { value: new THREE.Color(LOCK.filamentKern) },
       uTime: { value: 0 },
       uSpeed: { value: speed },
       uDensity: { value: 1 },
-      uShow: { value: signal ? 0 : 1 },
+      uShow: { value: 1 },
     },
     vertexShader: nerveVert,
     fragmentShader: nerveFrag,
   });
-  sealShaderChannels(
-    material,
-    signal ? ["uColor", "uCore", "uSpeed"] : ["uColor", "uCore", "uSpeed", "uShow"],
-  );
-  markMaterial(material, signal ? "signal" : "nerve");
+  sealShaderChannels(material, ["uColor", "uCore", "uSpeed", "uShow"]);
+  markMaterial(material, "nerve");
   return material;
 }
 
@@ -630,23 +582,19 @@ function upperCenter(t: number) {
 }
 
 /**
- * Glass upper arm. The outer rim stays on the shoulder line or inside it.
- * Where a full biceps would enter the ribs, the tube slims instead.
+ * Glass upper arm. Widest at the deltoid, tapering to the elbow.
+ * The lateral peak meets the acromion; the rest of the limb is inside it.
  */
 function upperGlass(t: number) {
   const src = upperCenter(t);
-  const u = Math.min(1, Math.max(0, t));
   const shoulderHalf = shellRadius(LOCK.proportions.shoulderLocalY) * SHELL_SX;
+  const peak = Math.max(...UPPER_RADII);
+  const hang = shoulderHalf - peak;
+  const fitR = src.r;
+  let center = hang;
   const torsoHalf = shellRadius(src.y) * SHELL_SX;
-  const gap = 0.008;
-  const outerCap = shoulderHalf;
-  const span = outerCap - (torsoHalf + gap);
-  const free = hermite(0.18, 0.46, u) * (1 - hermite(0.72, 0.94, u));
-  const room = Math.max(0, span * 0.5);
-  const fitR = src.r * (1 - free) + Math.min(src.r, room) * free;
-  const parked = outerCap - fitR;
-  let center = src.center + (Math.min(src.center, parked) - src.center) * free;
-  if (center + fitR > outerCap) center = outerCap - fitR;
+  if (center < torsoHalf + 0.008) center = torsoHalf + 0.008;
+  if (center + fitR > shoulderHalf) center = shoulderHalf - fitR;
   return { r: fitR, y: src.y, center };
 }
 
@@ -662,71 +610,24 @@ function upperSection(t: number, a: number, r: number) {
 }
 
 /**
- * Calf cross-section. Two gastrocnemius heads sit behind a flat tibia:
- * the lateral head higher, the medial head lower and fuller, with a
- * sulcus between them. The frontal width is inside the old spindle.
- * The posterior belly stays, so the side view keeps the gut.
- * The sulcus is a narrow cut. A wide gaussian lifts the inner slopes
- * and the pair reads as one soft valley from the side.
+ * Calf cross-section. One smooth gastrocnemius belly behind a tibia,
+ * mirror-even in local X. No medial/lateral fins, no sulcus wings.
+ * Glass and filaments share this section. `side` is unused: the hip
+ * placement mirrors the two legs.
  */
-function shinSection(t: number, a: number, r: number, side: 1 | -1) {
+function shinSection(t: number, a: number, r: number, _side: 1 | -1) {
   const s = Math.sin(a);
   const c = Math.cos(a);
-  const outward = side * c;
   const front = Math.max(0, s);
   const back = Math.max(0, -s);
-  const belly = Math.exp(-((t - 0.5) ** 2) / 0.04);
-  const risen = hermite(0.22, 0.42, t) * (1 - hermite(0.7, 0.9, t));
-  const mass = belly * risen;
-  const latT = Math.exp(-((t - 0.38) ** 2) / 0.016);
-  const medT = Math.exp(-((t - 0.58) ** 2) / 0.018);
-  const live = hermite(0.14, 0.32, t) * (1 - hermite(0.78, 0.94, t));
-  const lat = Math.exp(-((outward - 0.78) ** 2) / 0.05) * back;
-  const med = Math.exp(-((outward + 0.82) ** 2) / 0.045) * back;
-  // Dies before either head (peaks near ±0.8). Shorter than the old
-  // /0.16 gaussian, which lifted the inner slopes into one soft valley.
-  // Depth stays a sulcus: the floor does not reach the tibia.
-  const span = Math.min(1, Math.abs(outward) / 0.36);
-  const groove = (span >= 1 ? 0 : Math.cos(span * Math.PI * 0.5) ** 2) * back;
-  const xScale = 0.84 - 0.1 * Math.exp(-((t - 0.55) ** 2) / 0.03);
-  const x =
-    c * r * xScale + side * lat * latT * live * r * 0.9 - side * med * medT * live * r * 0.62;
-  const zFront = front ** 1.7 * r * (0.36 - 0.12 * mass);
-  const zBack = back ** 0.85 * r * (0.78 + 0.75 * mass);
-  const z =
-    zFront -
-    zBack -
-    lat * latT * live * r * 1.0 -
-    med * medT * live * r * 1.2 +
-    groove * Math.max(latT, medT) * live * mass * r * 1.2;
-  return { x, z };
-}
-
-/**
- * Glass calf. Filaments stay on `shinSection` (slave track).
- * Two posterior lobes, lateral higher and medial lower, with the shared
- * gut pulled forward between them so a yawed outline can notch.
- * The quiet flank narrows while the other head is up, which lets the far
- * head reach the silhouette. The rise is a long hermite so the band does
- * not leave the knee on a corner.
- */
-function shinGlass(t: number, a: number, r: number, side: 1 | -1) {
-  const base = shinSection(t, a, r, side);
-  const c = Math.cos(a);
-  const outward = side * c;
-  const back = Math.max(0, -Math.sin(a));
-  const rise = hermite(0.04, 0.4, t) * (1 - hermite(0.78, 0.96, t));
-  const latT = Math.exp(-((t - 0.42) ** 2) / 0.016);
-  const medT = Math.exp(-((t - 0.6) ** 2) / 0.012);
-  const lat = Math.exp(-((outward - 0.38) ** 2) / 0.055) * back;
-  const med = Math.exp(-((outward + 0.46) ** 2) / 0.06) * back;
-  const mid = Math.exp(-((t - 0.5) ** 2) / 0.013);
-  const fused = Math.exp(-((Math.abs(outward) - 0.6) ** 2) / 0.11) * back * mid;
-  const quiet =
-    (Math.max(0, outward) * (1 - latT) + Math.max(0, -outward) * (1 - medT)) * (0.4 + 0.6 * back);
-  const x = base.x - c * quiet * r * 0.24;
-  const z = base.z - (lat * latT * 0.85 + med * medT * 1.15) * rise * r + fused * r * 0.28;
-  return { x, z };
+  const gastroc = Math.exp(-((t - 0.4) ** 2) / 0.05);
+  const soleus = Math.exp(-((t - 0.62) ** 2) / 0.055);
+  const live = hermite(0.1, 0.28, t) * (1 - hermite(0.72, 0.9, t));
+  const mass = live * (gastroc * 0.7 + soleus * 0.38);
+  const xRad = r * 0.92;
+  const zFront = r * (0.72 - 0.06 * mass);
+  const zBack = r * (0.94 + 0.5 * mass);
+  return { x: c * xRad, z: front * zFront - back * zBack };
 }
 
 /** Wider Fresnel on torso and limbs. Skull and the unmarked glass stay at 0. */
@@ -751,57 +652,6 @@ function transmit(mesh: THREE.Mesh) {
   return mesh;
 }
 
-/**
- * Posterior calf rim for a yawed figure.
- * Each head fans out from the sulcus, so the far head is not the same
- * backward card as the near one. The floor stays unmarked and dark.
- * The blend follows a long hermite down the leg: a hard ring start was
- * the corner at the top of the band. Lateral normals fade out instead of
- * being cut, so the band meets the side silhouette on a curve.
- * The wider calf exponent still runs only when the figure is yawed.
- */
-function tuneCalfRim(geo: THREE.BufferGeometry, seg: number) {
-  const pos = geo.getAttribute("position");
-  const nrm = geo.getAttribute("normal");
-  const row = seg + 1;
-  if (!nrm || pos.count % row !== 0) return;
-  const rings = pos.count / row;
-  const kante = new Float32Array(pos.count);
-  for (let i = 0; i < rings; i++) {
-    const t = i / Math.max(1, rings - 1);
-    const along = hermite(0.02, 0.58, t) * (1 - hermite(0.8, 0.96, t));
-    let minZ = Infinity;
-    for (let j = 0; j < row; j++) minZ = Math.min(minZ, pos.getZ(i * row + j));
-    const span = Math.min(-0.02, minZ) + 0.012;
-    for (let j = 0; j < row; j++) {
-      const k = i * row + j;
-      const x = pos.getX(k);
-      const z = pos.getZ(k);
-      const depth = span < -1e-4 ? Math.min(1, Math.max(0, (z + 0.012) / span)) : 0;
-      const post = hermite(0.18, 0.75, depth);
-      const ny0 = nrm.getY(k);
-      const spread = Math.min(1, Math.abs(x) / 0.05);
-      // Sulcus floor stays dark. The fade is a hermite, not a cut, so the
-      // band does not start on a corner.
-      const offFloor = hermite(0.008, 0.028, Math.abs(x));
-      const ang = Math.sign(x || 1) * spread * 0.62 * post;
-      const ax = Math.sin(ang);
-      const az = -Math.cos(ang);
-      // Floor included, so the groove faces back and stays the dark gap.
-      const use = along * post;
-      if (use > 0.04) {
-        const nx = ax * use;
-        const ny = ny0 * (1 - use) * 0.35;
-        const nz = az * use + nrm.getZ(k) * (1 - use) * 0.15;
-        const len = Math.hypot(nx, ny, nz) || 1;
-        nrm.setXYZ(k, nx / len, ny / len, nz / len);
-      }
-      kante[k] = along * post * offFloor * (0.55 + 0.45 * spread);
-    }
-  }
-  geo.setAttribute("aKante", new THREE.Float32BufferAttribute(kante, 1));
-}
-
 /** Frontal half-width of the calf glass. The aura wraps this, not the bone radius. */
 function shinHalf(t: number) {
   const u = Math.min(1, Math.max(0, t));
@@ -818,7 +668,7 @@ function shinHalf(t: number) {
 function skinFade(x: number, y: number, z: number) {
   const rad = Math.max(0.02, shellRadius(y));
   const hx = rad * SHELL_SX;
-  const hz = rad * 0.72;
+  const hz = rad * SHELL_SZ;
   const e = (x * x) / (hx * hx) + (z * z) / (hz * hz);
   return hermite(0.62, 1.04, e);
 }
@@ -955,8 +805,13 @@ function fadeTorsoSides(geo: THREE.BufferGeometry) {
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i) * SHELL_SX;
     const y = pos.getY(i);
-    const z = pos.getZ(i) * 0.72;
+    const z = pos.getZ(i) * SHELL_SZ;
     let cover = 1;
+    // The neck continues inside the skull. Fade it so the open lathe
+    // does not draw a second ring under the jaw.
+    if (y > 0.44) cover = Math.min(cover, hermite(0.52, 0.44, y));
+    // The pelvis closes between the thighs. An open bottom ring is a skirt hem.
+    if (y < -0.3) cover = Math.min(cover, hermite(-0.46, -0.3, y));
     // Only the shell the arm already covers. The front of the chest stays,
     // so the pec rim does not invert.
     const yBot = yTop - P.upperArm;
@@ -980,19 +835,33 @@ function fadeTorsoSides(geo: THREE.BufferGeometry) {
   geo.setAttribute("aFade", new THREE.Float32BufferAttribute(fade, 1));
 }
 
+/** Flip a mesh through X and its winding, so the other side is a true mirror. */
+function mirrorGeometryX(geo: THREE.BufferGeometry) {
+  const pos = geo.getAttribute("position");
+  for (let i = 0; i < pos.count; i++) pos.setX(i, -pos.getX(i));
+  const idx = geo.getIndex();
+  if (!idx) return;
+  for (let i = 0; i < idx.count; i += 3) {
+    const a = idx.getX(i);
+    idx.setX(i, idx.getX(i + 1));
+    idx.setX(i + 1, a);
+  }
+}
+
 /**
- * Deltoid slope from the neck base out to the arm root.
- * A swept lathe, buried where it enters the torso. Not a joint sphere.
+ * Round deltoid from the neck base onto the arm.
+ * Built on the positive side and mirrored, so the pair cannot drift.
+ * Buried in the torso. Not a strap and not a joint sphere.
  */
 function shoulderSlope(side: 1 | -1) {
   const samples = 16;
-  const seg = 16;
+  const seg = 18;
   const pos: number[] = [];
   const fade: number[] = [];
   const idx: number[] = [];
-  const p0 = new THREE.Vector3(side * 0.07, 0.44, 0);
-  const p1 = new THREE.Vector3(side * 0.2, 0.33, 0.01);
-  const p2 = new THREE.Vector3(side * 0.17, 0.18, 0.006);
+  const p0 = new THREE.Vector3(0.1, 0.36, 0.02);
+  const p1 = new THREE.Vector3(0.19, 0.28, 0.03);
+  const p2 = new THREE.Vector3(0.16, 0.12, 0.012);
   const c = new THREE.Vector3();
   const tang = new THREE.Vector3();
   const sideV = new THREE.Vector3();
@@ -1009,19 +878,19 @@ function shoulderSlope(side: 1 | -1) {
       .addScaledVector(p0, -2 * u)
       .addScaledVector(p1, 2 * (u - t))
       .addScaledVector(p2, 2 * t);
-    if (tang.lengthSq() < 1e-8) tang.set(side, -1, 0);
+    if (tang.lengthSq() < 1e-8) tang.set(1, -1, 0);
     tang.normalize();
     sideV.crossVectors(tang, up);
     if (sideV.lengthSq() < 1e-8) sideV.set(1, 0, 0);
     sideV.normalize();
     bin.crossVectors(sideV, tang).normalize();
-    const rad = 0.016 + Math.sin(Math.PI * t) * 0.02;
-    const end = hermite(0, 0.16, t) * hermite(1, 0.7, t);
+    const rad = 0.02 + Math.sin(Math.PI * t) * 0.028;
+    const end = hermite(0, 0.18, t) * hermite(1, 0.72, t);
     for (let j = 0; j <= seg; j++) {
       const a = (j / seg) * Math.PI * 2;
-      const x = c.x + sideV.x * Math.cos(a) * rad + bin.x * Math.sin(a) * rad * 0.62;
-      const y = c.y + sideV.y * Math.cos(a) * rad + bin.y * Math.sin(a) * rad * 0.62;
-      const z = c.z + sideV.z * Math.cos(a) * rad + bin.z * Math.sin(a) * rad * 0.62;
+      const x = c.x + sideV.x * Math.cos(a) * rad + bin.x * Math.sin(a) * rad * 0.92;
+      const y = c.y + sideV.y * Math.cos(a) * rad + bin.y * Math.sin(a) * rad * 0.92;
+      const z = c.z + sideV.z * Math.cos(a) * rad + bin.z * Math.sin(a) * rad * 0.92;
       pos.push(x, y, z);
       fade.push(end * skinFade(x, y, z));
     }
@@ -1038,6 +907,7 @@ function shoulderSlope(side: 1 | -1) {
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute("aFade", new THREE.Float32BufferAttribute(fade, 1));
   geo.setIndex(idx);
+  if (side < 0) mirrorGeometryX(geo);
   return geo;
 }
 
@@ -1049,33 +919,32 @@ const SOLE_KISS = 0.014;
  * The sole dips at heel and ball and lifts through the arch.
  */
 function footLathe() {
-  const steps = 32;
-  const seg = 20;
-  const z0 = -0.046;
-  const z1 = 0.168;
+  const steps = 28;
+  const seg = 16;
+  const z0 = -0.05;
+  const z1 = 0.2;
   const pos: number[] = [];
   const idx: number[] = [];
   let minY = Infinity;
   for (let i = 0; i < steps; i++) {
     const u = i / (steps - 1);
-    const end = Math.min(hermite(0, 0.1, u), hermite(1, 0.58, u));
-    const heel = Math.exp(-((u - 0.14) ** 2) / 0.012);
-    const arch = Math.exp(-((u - 0.46) ** 2) / 0.016);
-    const ball = Math.exp(-((u - 0.72) ** 2) / 0.011);
-    const ankle = Math.exp(-((u - 0.24) ** 2) / 0.008);
-    const width = (0.018 + 0.01 * heel + 0.018 * ball) * (0.18 + 0.82 * end);
-    const height =
-      (0.016 + 0.046 * heel + 0.014 * ball + 0.05 * ankle) * (0.12 + 0.88 * end);
-    const toeLift = hermite(0.68, 1, u) * 0.016 * end;
-    const sole = -0.03 + 0.024 * arch * end + toeLift;
+    const end = Math.min(hermite(0, 0.08, u), hermite(1, 0.62, u));
+    const heel = Math.exp(-((u - 0.16) ** 2) / 0.014);
+    const arch = Math.exp(-((u - 0.42) ** 2) / 0.02);
+    const ball = Math.exp(-((u - 0.7) ** 2) / 0.012);
+    const width = (0.03 + 0.008 * heel + 0.014 * ball) * (0.45 + 0.55 * end);
+    const instep = (0.016 + 0.02 * heel + 0.01 * ball) * (0.4 + 0.6 * end);
+    const soleLift = 0.01 * arch * end;
     const z = z0 + (z1 - z0) * u;
     for (let j = 0; j <= seg; j++) {
       const ang = (j / seg) * Math.PI * 2;
       const cx = Math.cos(ang);
-      const sy = Math.sin(ang);
-      const yk = sy < 0 ? -Math.pow(-sy, 0.92) : sy;
-      const y = sole + ((yk + 1) * 0.5) * height;
-      const x = cx * width * (sy < 0 ? 0.92 : 1);
+      let sy = Math.sin(ang);
+      if (j === seg) sy = 0;
+      if (Math.abs(sy) < 1e-7) sy = 0;
+      // Flat sole. The top is the instep. No ankle ring.
+      const y = sy >= 0 ? soleLift + sy * instep : soleLift + sy * 0.004;
+      const x = cx * width;
       if (y < minY) minY = y;
       pos.push(x, y, z);
     }
@@ -1127,28 +996,37 @@ function glowSprite(inner: string, outer: string, spikes: number) {
 }
 
 const SHELL_SX = 1.05;
+/** Rounder than the old 0.72 panel, still an oval ribcage. */
+const SHELL_SZ = 0.78;
 const SKULL_SY = 1.16;
+const SKULL_SZ = 1.02;
 const HIP_X = 0.11;
 /**
- * Athletic torso, same neck span as before. Radii are the lathe, before SHELL_SX.
- * Waist stays narrower than chest and iliac. Neck top is unchanged so the skull sits.
+ * Human torso. Radii are the lathe, before SHELL_SX.
+ * Acromion sits on the arm, trapezius eases into the neck, waist is
+ * narrower than chest and iliac. No shoulder shelf.
  */
 const SHELL_LATHE: Array<[number, number]> = [
-  [0.12, -0.34],
-  [0.188, -0.29],
-  [0.202, -0.22],
-  [0.19, -0.15],
-  [0.156, -0.06],
-  [0.134, 0.02],
-  [0.144, 0.08],
-  [0.178, 0.14],
-  [0.21, 0.19],
-  [0.228, 0.24],
-  [0.246, 0.29],
-  [0.176, 0.35],
-  [0.118, 0.39],
-  [0.09, 0.43],
-  [0.05, 0.5],
+  [0.02, -0.46],
+  [0.045, -0.4],
+  [0.085, -0.35],
+  [0.125, -0.3],
+  [0.155, -0.24],
+  [0.148, -0.16],
+  [0.126, -0.06],
+  [0.108, 0.02],
+  [0.126, 0.1],
+  [0.15, 0.17],
+  [0.172, 0.22],
+  [0.196, 0.255],
+  [0.21, 0.28],
+  [0.196, 0.305],
+  [0.15, 0.33],
+  [0.098, 0.355],
+  [0.066, 0.38],
+  [0.05, 0.42],
+  [0.044, 0.47],
+  [0.04, 0.52],
 ];
 /** Crossfade length shared by a parent distal end and its child proximal end. */
 const BLEND = { elbow: 0.14, knee: 0.14, shoulder: 0.02, hip: 0.05 };
@@ -1157,14 +1035,14 @@ const BLEND = { elbow: 0.14, knee: 0.14, shoulder: 0.02, hip: 0.05 };
  */
 const UPPER_RADII = [0.032, 0.04, 0.048, 0.054, 0.058, 0.052, 0.044, 0.038, 0.034];
 /** Forearm belly sits past the elbow blend. Ends match the wrist. */
-const FORE_RADII = [0.034, 0.036, 0.044, 0.046, 0.04, 0.03, 0.022];
+const FORE_RADII = [0.034, 0.036, 0.04, 0.04, 0.036, 0.028, 0.022];
 /** Quad belly, then the knee radius so the bridge stays the same tube. */
 const THIGH_RADII = [0.096, 0.104, 0.106, 0.088, 0.066, 0.048, 0.042, 0.042, 0.042];
 /**
- * Knee, then the bone radius `shinSection` builds on.
- * Calf filaments follow that section (two heads and the groove), not this spindle.
+ * Knee, then the bone radius the calf section builds on.
+ * Belly in the upper third, smooth taper to the ankle. No spindle.
  */
-const SHIN_RADII = [0.042, 0.044, 0.05, 0.062, 0.074, 0.074, 0.05, 0.034, 0.026];
+const SHIN_RADII = [0.044, 0.05, 0.058, 0.066, 0.07, 0.062, 0.05, 0.038, 0.03];
 const LIMB = {
   upper: { r0: UPPER_RADII[0], r1: UPPER_RADII[UPPER_RADII.length - 1], inset: 0.06 },
   fore: { r0: FORE_RADII[0], r1: FORE_RADII[FORE_RADII.length - 1], inset: 0 },
@@ -1310,12 +1188,6 @@ float sdLimb(vec2 p, float x, float yTop, float yBot, float r0, float r1, float 
   return sdTaper(p, vec2(lean, yTop), vec2(x, yBot), r0, r1);
 }
 
-float sdDeltoid(vec2 p, float s) {
-  float neck = sdTaper(p, vec2(s * 0.08, 1.72), vec2(s * 0.21, 1.61), 0.018, 0.034);
-  float cap = sdTaper(p, vec2(s * 0.21, 1.61), vec2(s * 0.17, 1.46), 0.034, 0.02);
-  return smin(neck, cap, 0.03);
-}
-
 float sdHug(vec2 p, float s) {${hugPair}}
 float sdFore(vec2 p, float s) {${forePair}}
 float sdThigh(vec2 p, float s) {${thighPair}}
@@ -1323,9 +1195,7 @@ float sdShin(vec2 p, float s) {${shinPair}}
 
 float sdBody(vec2 p) {
   float d = sdTorso(p);
-  d = smin(d, sdEllipse(p, vec2(0.0, ${g4(headY)}), vec2(${g4(P.headRadius)}, ${g4(P.headRadius * SKULL_SY)})), 0.036);
-  d = smin(d, sdDeltoid(p, 1.0), 0.032);
-  d = smin(d, sdDeltoid(p, -1.0), 0.032);
+  d = smin(d, sdEllipse(p, vec2(0.0, ${g4(headY)}), vec2(0.1000, 0.1120)), 0.02);
   d = smin(d, sdHug(p, 1.0), 0.04);
   d = smin(d, sdHug(p, -1.0), 0.04);
   d = smin(d, sdFore(p, 1.0), 0.028);
@@ -1508,7 +1378,7 @@ function fillTorso(ribbon: Ribbon) {
     const r = shellRadius(Math.max(-0.34, Math.min(0.5, y)));
     return {
       x: Math.max(0.012, r * SHELL_SX * inset),
-      z: Math.max(0.008, r * 0.72 * inset),
+      z: Math.max(0.008, r * SHELL_SZ * inset),
     };
   };
   const massAt = (y: number) => {
@@ -1878,7 +1748,7 @@ function fillLimb(
   // to that inset, so a chord on the taper cannot touch the cyan rim.
   // Twig gain stays under the old lane twigs: additive overlap is the fill,
   // and a hotter gain clips the core to white.
-  let n = Math.round(seed * 19 + length * 80 + radii.length);
+  let n = Math.round(Math.abs(seed) * 19 + length * 80 + radii.length);
   const h = () => unitHash(n++);
   const flat = 0.8;
   const axis = axisX ?? (() => 0);
@@ -1902,7 +1772,10 @@ function fillLimb(
     const wander = Math.min(rx, rz) * 0.24;
     return new THREE.Vector3(
       axis(u) +
-        clamp(side * rx * 0.04 + lane.x * rx + Math.sin(u * Math.PI * 1.25 + lane.phase) * wander, rx),
+        clamp(
+          side * (rx * 0.04 + lane.x * rx + Math.sin(u * Math.PI * 1.25 + lane.phase) * wander),
+          rx,
+        ),
       -u * length,
       clamp(lane.z * rz + Math.sin(u * Math.PI * 0.8 + lane.phase * 1.35) * wander * 0.85, rz),
     );
@@ -1992,8 +1865,8 @@ function shinTubeRadius(t: number) {
 }
 
 /**
- * Filament cross-section. Still `shinSection`, not the glass lobes.
- * Lateral head, medial head, and the posterior groove, each inset off the rim.
+ * Filament stations inside the smooth calf. Lateral and medial are the
+ * two sides of one belly; the center lane sits on that belly, not in a cut.
  */
 function calfFrame(t: number, side: 1 | -1) {
   const r = shinTubeRadius(t);
@@ -2068,14 +1941,13 @@ function calfFrame(t: number, side: 1 | -1) {
 }
 
 /**
- * Fine calf nerves on both gastrocnemius heads and in the groove.
- * The lateral bundle is higher, the medial bundle lower and a little fuller.
- * Chords stay inside the section so they do not bridge across the valley.
+ * Fine calf nerves through the belly. Same seed on both legs, offsets
+ * flipped by side, so the pair is a mirror.
  */
 function fillCalf(ribbon: Ribbon, side: 1 | -1) {
   const length = LOCK.proportions.shin;
   const prox = BLEND.knee;
-  let seed = 900 + side * 13;
+  let seed = 900;
   const h = () => unitHash(seed++);
   const frameAt = (u: number) => {
     const t = Math.min(1, Math.max(0, (prox + u * length) / (prox + length)));
@@ -2099,7 +1971,7 @@ function fillCalf(ribbon: Ribbon, side: 1 | -1) {
           const uu = 0.07 + u * 0.88;
           const frame = frameAt(uu);
           const src = laneOf(frame, trunk.lane);
-          const wobX = Math.sin(uu * Math.PI * 1.35 + phase) * 0.0035;
+          const wobX = side * Math.sin(uu * Math.PI * 1.35 + phase) * 0.0035;
           const wobZ = Math.sin(uu * Math.PI + phase * 1.2) * 0.0025;
           const p = frame.contain(src.x + side * spread + wobX, src.z + wobZ, 0.72);
           return new THREE.Vector3(p.x, -uu * length, p.z);
@@ -2145,8 +2017,8 @@ function fillCalf(ribbon: Ribbon, side: 1 | -1) {
         const tang = (tang0 + (tang1 - tang0) * u) * frame.r * amp;
         const spanLen = Math.hypot(vx, vz) || 1;
         const p = frame.contain(
-          frame.cx + vx * depth + (-vz / spanLen) * tang,
-          frame.cz + vz * depth + (vx / spanLen) * tang,
+          frame.cx + vx * depth + side * (-vz / spanLen) * tang,
+          frame.cz + vz * depth + (side * vx / spanLen) * tang,
           lane === "groove" ? 0.58 : 0.7,
         );
         return new THREE.Vector3(p.x, -uu * length, p.z);
@@ -2160,39 +2032,35 @@ function fillCalf(ribbon: Ribbon, side: 1 | -1) {
   }
 }
 
-const FINGER_SPECS = [
-  { x: -0.03, z: 0.02, len: 0.052, rot: 0.5 },
-  { x: -0.012, z: 0.016, len: 0.074, rot: 0.08 },
-  { x: 0.004, z: 0.018, len: 0.082, rot: 0 },
-  { x: 0.018, z: 0.014, len: 0.076, rot: -0.08 },
-  { x: 0.03, z: 0.008, len: 0.062, rot: -0.16 },
-];
+const HAND_FINGERS = [
+  { x: -0.03, z: 0.002, len: 0.058 },
+  { x: -0.014, z: 0.006, len: 0.082 },
+  { x: 0.002, z: 0.008, len: 0.092 },
+  { x: 0.018, z: 0.005, len: 0.084 },
+  { x: 0.032, z: 0.0, len: 0.064 },
+] as const;
 
-function fillHand(ribbon: Ribbon, side: 1 | -1) {
-  for (let f = 0; f < FINGER_SPECS.length; f++) {
-    const spec = FINGER_SPECS[f];
-    const rot = spec.rot * side;
-    const reach = spec.len * 0.92;
-    const tipX = spec.x * side + Math.sin(rot) * reach;
-    const tipY = -0.02 - Math.cos(rot) * reach;
+function fillHand(ribbon: Ribbon, side: 1 | -1, ox: number) {
+  for (let f = 0; f < HAND_FINGERS.length; f++) {
+    const spec = HAND_FINGERS[f];
     pushCurve(
       ribbon,
-      7,
-      (u) => new THREE.Vector3(tipX * u, tipY * u, 0.006 + (spec.z - 0.006) * u),
-      0.16 + f * 0.04,
-      0.00016,
-      0.34,
-      0.22,
-      0.7,
+      8,
+      (u) => new THREE.Vector3(ox + side * spec.x, -0.09 - u * spec.len * 0.92, spec.z * u),
+      0.12 + f * 0.03,
+      0.00014,
+      0.3,
+      0.2,
+      0.55,
     );
   }
   pushCurve(
     ribbon,
     8,
-    (u) => new THREE.Vector3((-0.032 + u * 0.064) * side, -0.028, 0.014),
-    0.28,
-    0.00015,
-    0.26,
+    (u) => new THREE.Vector3(ox + (-0.032 + u * 0.064) * side, -0.05, 0.01),
+    0.22,
+    0.00014,
+    0.24,
     0.16,
     0.2,
   );
@@ -2225,16 +2093,19 @@ function fillFoot(ribbon: Ribbon, side: 1 | -1) {
 }
 
 function fillHead(ribbon: Ribbon, radius: number) {
-  // Soft volume inside the current lathe skull. Discs, not rows.
+  // Soft volume inside the sculpted skull. Discs, not rows.
   // A long bar stripes, and a thick curve fans. No brow, eyes, nose, or spark.
   // Inset so the cyan glass rim stays the silhouette and the void stays outside.
-  const rx = radius * 0.9;
+  // The jaw narrows, so the cloud narrows with it.
+  const rx = radius * 0.7;
   const ry = radius * 1.16 * 0.9;
-  const rz = radius * 1.02 * 0.86;
+  const rz = radius * 1.02 * 0.72;
   let seed = 700;
   const h = () => unitHash(seed++);
-  const ell = (x: number, y: number, z: number) =>
-    (x * x) / (rx * rx) + (y * y) / (ry * ry) + (z * z) / (rz * rz);
+  const ell = (x: number, y: number, z: number) => {
+    const jaw = y < 0 ? Math.max(0.62, 1 + y * 2.1) : 1;
+    return (x * x) / (rx * rx * jaw * jaw) + (y * y) / (ry * ry) + (z * z) / (rz * rz);
+  };
 
   const pick = (bias: number) => {
     for (let n = 0; n < 24; n++) {
@@ -2284,10 +2155,10 @@ function fillHead(ribbon: Ribbon, radius: number) {
   };
 
   for (let i = 0; i < 22; i++) {
-    disc(radius * (0.82 + h() * 0.24), 0.16, 0.3 + h() * 0.08, 0.02 + h() * 0.04, 0.15);
+    disc(radius * (0.55 + h() * 0.16), 0.045, 0.22 + h() * 0.06, 0.02 + h() * 0.04, 0.35);
   }
-  for (let i = 0; i < 34; i++) {
-    disc(radius * (0.46 + h() * 0.18), 0.1, 0.36 + h() * 0.12, 0.05 + h() * 0.08, 0.35);
+  for (let i = 0; i < 28; i++) {
+    disc(radius * (0.32 + h() * 0.12), 0.028, 0.26 + h() * 0.08, 0.05 + h() * 0.08, 0.55);
   }
 }
 
@@ -2326,53 +2197,57 @@ function fillPelvis(ribbon: Ribbon, hipY: number) {
   }
 }
 
-function fillHotspot(ribbon: Ribbon) {
-  const cx = -0.05;
-  const cy = -0.04;
-  const cz = 0.04;
-  for (let i = 0; i < 16; i++) {
-    const phase = i * 2.399963;
-    const tilt = 0.35 + (i % 6) * 0.5;
-    pushCurve(
-      ribbon,
-      12,
-      (u) => {
-        const a = phase + u * Math.PI * (1.15 + (i % 3) * 0.4);
-        const rad = 0.032 + (i % 5) * 0.006;
-        const wob = Math.sin(u * Math.PI * 3 + i) * 0.01;
-        return new THREE.Vector3(
-          cx + Math.cos(a) * rad + Math.sin(tilt + u * 4) * wob,
-          cy + Math.sin(a * 0.85) * rad * 0.7 + Math.cos(u * 5 + phase) * 0.008,
-          cz + Math.sin(a + tilt) * rad * 0.62,
-        );
-      },
-      0.03 + (i % 5) * 0.02,
-      0.00105,
-      0.58,
-      0.58 + (i % 4) * 0.1,
-      0.08,
-    );
+/**
+ * Human skull in head space, written back into the sphere's local space
+ * (the mesh scale is still the locked [1, 1.16, 1.02]).
+ * Cranium, brow, nose, lips, chin, ears, and a short neck stump.
+ * Even in X: theta and -theta are mirrors.
+ */
+function skullSurface(dx: number, dy: number, dz: number) {
+  const theta = Math.atan2(dx, dz);
+  const front = Math.max(0, dz);
+  const yNorm = dy;
+  const ax = 0.092;
+  const ay = 0.128;
+  const az = 0.096;
+  let x = dx * ax;
+  let y = dy * ay;
+  let z = dz * az;
+  const parietal = Math.exp(-((yNorm - 0.32) ** 2) / 0.09);
+  x *= 1 + parietal * 0.05;
+  const jaw = hermite(0.0, -0.55, yNorm);
+  x *= 1 - jaw * 0.12;
+  const chinW = Math.exp(-((yNorm + 0.72) ** 2) / 0.045) * front;
+  const nose = Math.exp(-((yNorm + 0.08) ** 2) / 0.014) * front ** 1.6;
+  const brow = Math.exp(-((yNorm - 0.28) ** 2) / 0.02) * front;
+  const lips = Math.exp(-((yNorm + 0.46) ** 2) / 0.008) * front ** 2;
+  const ear =
+    Math.exp(-((yNorm + 0.02) ** 2) / 0.02) * Math.exp(-((Math.abs(dx) - 0.95) ** 2) / 0.012);
+  z += nose * 0.036 + brow * 0.012 + lips * 0.012 + chinW * 0.026;
+  y -= chinW * 0.02;
+  x += Math.sign(dx || 1) * ear * 0.012;
+  const neckBase = hermite(-0.2, -0.92, yNorm);
+  const neck = neckBase * (1 - front * 0.82);
+  const neckR = 0.048;
+  const neckY = -0.06 - neckBase * 0.08;
+  x = x * (1 - neck) + Math.sin(theta) * neckR * neck;
+  z = z * (1 - neck) + Math.cos(theta) * neckR * 0.92 * neck;
+  y = y * (1 - neck) + neckY * neck;
+  return { x, y, z };
+}
+
+function sculptSkull(geo: THREE.BufferGeometry) {
+  const pos = geo.getAttribute("position");
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const len = v.length();
+    if (len < 1e-6) continue;
+    v.multiplyScalar(1 / len);
+    const hs = skullSurface(v.x, v.y, v.z);
+    pos.setXYZ(i, hs.x, hs.y / SKULL_SY, hs.z / SKULL_SZ);
   }
-  for (let i = 0; i < 6; i++) {
-    const ang = (i / 6) * Math.PI * 2 + 0.4;
-    pushCurve(
-      ribbon,
-      8,
-      (u) => {
-        const rad = 0.03 + Math.sin(u * Math.PI) * 0.035;
-        return new THREE.Vector3(
-          cx + Math.cos(ang + u * 2.2) * rad * 0.85,
-          cy - 0.01 - u * 0.07 + Math.sin(ang) * 0.01,
-          cz + Math.sin(ang + u) * rad * 0.55,
-        );
-      },
-      0.08,
-      0.0009,
-      0.5,
-      0.78,
-      0.35,
-    );
-  }
+  pos.needsUpdate = true;
 }
 
 export function createKushim(): Rig {
@@ -2380,12 +2255,7 @@ export function createKushim(): Rig {
   const root = new THREE.Group();
   const glass = glassMaterial(1, "glass");
   const nerve = nerveMaterial(LOCK.filament, 0.34);
-  const signal = nerveMaterial(LOCK.signal, 0.2);
-  const disposables: Array<THREE.BufferGeometry | THREE.Material | THREE.Texture> = [
-    glass,
-    nerve,
-    signal,
-  ];
+  const disposables: Array<THREE.BufferGeometry | THREE.Material | THREE.Texture> = [glass, nerve];
 
   const chest = new THREE.Group();
   chest.position.y = P.chestY;
@@ -2397,14 +2267,16 @@ export function createKushim(): Rig {
   );
   fadeTorsoSides(torsoGeo);
   const torso = transmit(markBodyRim(solid(chest, torsoGeo, glass)));
-  torso.scale.set(SHELL_SX, 1, 0.72);
+  torso.scale.set(SHELL_SX, 1, SHELL_SZ);
   torso.userData.lockKey = "torso";
 
   const head = new THREE.Group();
   head.position.y = P.headLocalY;
   chest.add(head);
-  const skull = transmit(solid(head, new THREE.SphereGeometry(P.headRadius, 24, 16), glass));
-  skull.scale.set(1, 1.16, 1.02);
+  const skullGeo = new THREE.SphereGeometry(P.headRadius, 64, 48);
+  sculptSkull(skullGeo);
+  const skull = transmit(markBodyRim(solid(head, skullGeo, glass)));
+  skull.scale.set(1, SKULL_SY, SKULL_SZ);
   skull.userData.lockKey = "skull";
   const jaw = solid(head, new THREE.SphereGeometry(P.headRadius * 0.72, 16, 12), glass);
   jaw.position.set(0, 0, 0);
@@ -2418,7 +2290,7 @@ export function createKushim(): Rig {
   lips.rotation.z = Math.PI / 2;
   for (const side of [-1, 1] as const) {
     const ear = solid(head, new THREE.SphereGeometry(0.028, 10, 8), glass);
-    ear.position.set(side * 0.09, -0.008, -0.01);
+    ear.position.set(side * 0.055, -0.004, 0);
     ear.scale.set(0.18, 0.48, 0.28);
   }
   const headNerves = emptyRibbon();
@@ -2488,7 +2360,7 @@ export function createKushim(): Rig {
     shoulder.position.set(side * P.shoulderX, P.shoulderLocalY, 0);
     chest.add(shoulder);
     transmit(markBodyRim(solid(chest, shoulderSlope(side), glass)));
-    const upperMesh = transmit(markBodyRim(solid(
+    transmit(markBodyRim(solid(
       shoulder,
       organicTube(
         UPPER_RADII,
@@ -2519,39 +2391,63 @@ export function createKushim(): Rig {
     const elbow = new THREE.Group();
     elbow.position.y = -P.upperArm;
     shoulder.add(elbow);
-    markBodyRim(solid(elbow, jointBridge(LIMB.fore.r0, BLEND.elbow), glass));
-    const foreMesh = transmit(markBodyRim(solid(
+    const shoulderHalf = shellRadius(P.shoulderLocalY) * SHELL_SX;
+    const hang = shoulderHalf - Math.max(...UPPER_RADII);
+    const foreInset = Math.max(0, P.shoulderX - hang);
+    const elbowBridge = markBodyRim(solid(elbow, jointBridge(LIMB.fore.r0, BLEND.elbow), glass));
+    elbowBridge.position.x = side * -foreInset;
+    transmit(markBodyRim(solid(
       elbow,
-      organicTube(FORE_RADII, P.foreArm, side, 0, BLEND.elbow, 0, {
+      organicTube(FORE_RADII, P.foreArm, side, foreInset, BLEND.elbow, 0, {
         join: "child",
+        tuckPower: 0,
       }),
       glass,
     )));
     const foreN = emptyRibbon();
-    fillLimb(foreN, P.foreArm, FORE_RADII, 0.07, 0.00009, 0.42, side * 2.1, side);
+    fillLimb(foreN, P.foreArm, FORE_RADII, 0.07, 0.00009, 0.42, side * 2.1, side, () => -side * foreInset);
     commitRibbon(elbow, foreN, nerve);
 
     const wrist = new THREE.Group();
     wrist.position.y = -P.foreArm;
     elbow.add(wrist);
-    const palm = transmit(markBodyRim(solid(
-      wrist,
-      new THREE.LatheGeometry(
-        [
-          new THREE.Vector2(0.01, 0),
-          new THREE.Vector2(0.026, -0.012),
-          new THREE.Vector2(0.024, -0.034),
-          new THREE.Vector2(0.014, -0.05),
-        ],
-        10,
-      ),
-      glass,
-    )));
-    palm.scale.set(1.15, 1, 0.42);
-    palm.position.set(0, -0.01, 0.01);
+    const hand = new THREE.Group();
+    hand.position.x = side * -foreInset;
+    wrist.add(hand);
+    const palmGeo = new THREE.LatheGeometry(
+      [
+        new THREE.Vector2(0.014, 0),
+        new THREE.Vector2(0.032, -0.022),
+        new THREE.Vector2(0.038, -0.052),
+        new THREE.Vector2(0.034, -0.08),
+        new THREE.Vector2(0.018, -0.09),
+      ],
+      10,
+    );
+    palmGeo.scale(1, 1, 0.46);
+    transmit(markBodyRim(solid(hand, palmGeo, glass)));
     const fingers: THREE.Group[] = [];
+    for (const spec of HAND_FINGERS) {
+      const finger = new THREE.Group();
+      finger.position.set(side * spec.x, -0.086, spec.z);
+      hand.add(finger);
+      transmit(markBodyRim(solid(
+        finger,
+        new THREE.LatheGeometry(
+          [
+            new THREE.Vector2(0.008, 0),
+            new THREE.Vector2(0.009, -spec.len * 0.35),
+            new THREE.Vector2(0.006, -spec.len * 0.78),
+            new THREE.Vector2(0.001, -spec.len),
+          ],
+          6,
+        ),
+        glass,
+      )));
+      fingers.push(finger);
+    }
     const handN = emptyRibbon();
-    fillHand(handN, side);
+    fillHand(handN, side, side * -foreInset);
     commitRibbon(wrist, handN, nerve);
     return { shoulder, elbow, wrist, fingers };
   }
@@ -2559,65 +2455,13 @@ export function createKushim(): Rig {
   const left = makeArm(1);
   const right = makeArm(-1);
 
-  const signalNerves = emptyRibbon();
-  fillHotspot(signalNerves);
-  commitRibbon(right.shoulder, signalNerves, signal, 6);
-
-  const coreMat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    uniforms: {
-      uColor: { value: new THREE.Color(LOCK.signal) },
-      uCore: { value: new THREE.Color("#FFB15A") },
-      uBoost: { value: 2.4 },
-      uShow: { value: 0 },
-    },
-    vertexShader: glassVert,
-    fragmentShader: coreFrag,
-  });
-  sealShaderChannels(coreMat, ["uColor", "uCore", "uBoost"]);
-  markMaterial(coreMat, "core");
-  disposables.push(coreMat);
-  const core = solid(right.shoulder, new THREE.SphereGeometry(0.01, 16, 12), coreMat);
-  core.position.set(-0.05, -0.042, 0.042);
-  core.renderOrder = 4;
-
-  const ringCount = 96;
-  const ringAngles = new Float32Array(ringCount);
-  const ringJitter = new Float32Array(ringCount);
-  const ringPos = new Float32Array(ringCount * 3);
-  for (let i = 0; i < ringCount; i++) {
-    ringAngles[i] = (i / ringCount) * Math.PI * 2;
-    ringJitter[i] = 0.75 + ((i * 37) % 10) / 25;
-  }
-  const ringGeo = new THREE.BufferGeometry();
-  ringGeo.setAttribute("position", new THREE.BufferAttribute(ringPos, 3));
-  const ringMat = new THREE.PointsMaterial({
-    color: LOCK.signal,
-    size: 0.028,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    opacity: 0.8,
-    sizeAttenuation: true,
-  });
-  sealLookColor(ringMat.color);
-  markMaterial(ringMat, "ring");
-  const ring = new THREE.Points(ringGeo, ringMat);
-  ring.position.set(-0.042, -0.04, 0.034);
-  ring.frustumCulled = false;
-  ring.renderOrder = 5;
-  right.shoulder.add(ring);
-  disposables.push(ringGeo, ringMat);
-
   function makeLeg(side: 1 | -1) {
     const hip = new THREE.Group();
     hip.userData.lockKey = "hip";
     hip.userData.lockSide = side;
     hip.position.set(side * HIP_X, P.hipY, 0);
     root.add(hip);
-    const thighMesh = transmit(markBodyRim(solid(
+    transmit(markBodyRim(solid(
       hip,
       organicTube(
         THIGH_RADII,
@@ -2648,13 +2492,12 @@ export function createKushim(): Rig {
     knee.position.y = -P.thigh;
     hip.add(knee);
     markBodyRim(solid(knee, jointBridge(LIMB.shin.r0, BLEND.knee), glass));
-    const shinGeo = organicTube(SHIN_RADII, P.shin, side, 0, BLEND.knee, 0.035, {
+    const shinGeo = organicTube(SHIN_RADII, P.shin, side, 0, BLEND.knee, 0.06, {
       join: "child",
-      seg: 56,
-      section: (t, a, r) => shinGlass(t, a, r, side),
+      seg: 40,
+      section: (t, a, r) => shinSection(t, a, r, side),
     });
     markBodyRim(solid(knee, shinGeo, glass));
-    tuneCalfRim(shinGeo, 56);
     const shinN = emptyRibbon();
     fillCalf(shinN, side);
     commitRibbon(knee, shinN, nerve);
@@ -2708,11 +2551,6 @@ export function createKushim(): Rig {
     fingersR: right.fingers,
     glass,
     nerve,
-    signal,
-    ring,
-    ringAngles,
-    ringJitter,
-    core,
     dispose: () => {
       const seen = new Set<THREE.BufferGeometry | THREE.Material | THREE.Texture>();
       for (const item of disposables) {

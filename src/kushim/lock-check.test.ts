@@ -70,7 +70,7 @@ describe("appearance lock table", () => {
     assert.equal(LOCK.void, "#000000");
     assert.equal(LOCK.strom, "#3AD7FF");
     assert.equal(LOCK.kern, "#E7FBFF");
-    assert.equal(LOCK.signal, "#FF3B4E");
+    assert.equal("signal" in LOCK, false);
     assert.equal("signal" in LOCK_CANON, false);
     assert.equal(JSON.stringify(LOCK_CANON).includes("FF3B4E"), false);
     assert.equal(JSON.stringify(LOCK_CANON).includes("FF8A2A"), false);
@@ -95,7 +95,7 @@ describe("appearance lock table", () => {
     assert.equal(LOCK_CANON.filamentMin, 0.86);
     assert.equal(LOCK_CANON.filamentMax, 1);
     assert.equal(LOCK_CANON.hipX, 0.11);
-    assert.deepEqual(LOCK_CANON.torsoScale, [1.05, 1, 0.72]);
+    assert.deepEqual(LOCK_CANON.torsoScale, [1.05, 1, 0.78]);
     assert.deepEqual(LOCK_CANON.skullScale, [1, 1.16, 1.02]);
     assert.equal(LOCK.proportions.hipY, 1);
     assert.equal(LOCK.proportions.chestY, 1.28);
@@ -144,7 +144,7 @@ describe("figure lock", () => {
         const geo = (obj as THREE.Mesh).geometry as { type?: string } | undefined;
         if (geo?.type === "SphereGeometry") spheres += 1;
       });
-      assert.equal(spheres, 5);
+      assert.equal(spheres, 4);
     } finally {
       rig.dispose();
     }
@@ -155,10 +155,6 @@ describe("figure lock", () => {
     const scene = new THREE.Scene();
     scene.add(rig.root);
     try {
-      assert.equal(
-        `#${(rig.signal.uniforms.uColor.value as THREE.Color).getHexString().toUpperCase()}`,
-        LOCK.signal,
-      );
       assert.doesNotThrow(() => assertRigLock(rig, "build", scene));
       assert.doesNotThrow(() => assertRigLock(rig, "live", scene));
       const added = new THREE.Mesh(
@@ -193,8 +189,6 @@ describe("figure lock", () => {
       assert.ok(rig.shoulderR.position.x < 0);
       assert.equal(rig.shoulderR.position.x, -LOCK.proportions.shoulderX);
       assert.equal(rig.shoulderL.position.x, LOCK.proportions.shoulderX);
-      assert.equal(rig.core.parent, rig.shoulderR);
-      assert.equal(rig.ring.parent, rig.shoulderR);
       assert.throws(() => {
         rig.glass.uniforms.uColor.value = new THREE.Color("#ffffff");
       }, TypeError);
@@ -216,10 +210,7 @@ describe("figure lock", () => {
           0.05,
           step * 0.4,
         );
-        assert.equal(rig.signal.uniforms.uShow.value, 0);
-        const coreShow = (rig.core.material as THREE.ShaderMaterial).uniforms.uShow?.value;
-        assert.equal(coreShow, 0);
-        assert.equal((rig.ring.material as THREE.PointsMaterial).opacity, 0);
+        assert.equal(rig.nerve.uniforms.uShow.value, 1);
         assert.doesNotThrow(() => assertRigLock(rig, "live"));
       }
     } finally {
@@ -251,18 +242,18 @@ describe("figure lock", () => {
                   step * 0.41 + (hour === 8 ? 1000 : 0),
                 );
                 assert.equal(rig.nerve.uniforms.uShow.value, 1);
-                if (!shoulderTopic) {
-                  assert.equal(rig.signal.uniforms.uShow.value, 0);
-                  const coreMat = rig.core.material as THREE.ShaderMaterial;
-                  assert.equal(coreMat.uniforms.uShow.value, 0);
-                  assert.equal((rig.ring.material as THREE.PointsMaterial).opacity, 0);
-                }
                 assertRigLock(rig, "live");
               }
             }
           }
         }
       }
+      tickKushim(
+        rig,
+        pose({ gesture: "idle", hour: 0, reducedMotion: false, shoulderTopic: false }),
+        0.05,
+        0.4,
+      );
       assert.throws(() => assertRigLock(rig, "build"), LockBreach);
     } finally {
       rig.dispose();
@@ -272,18 +263,11 @@ describe("figure lock", () => {
   it("fails when the signal, silhouette, or filament leaves the lock", () => {
     const rig = createKushim();
     try {
-      rig.shoulderL.add(rig.core);
-      assert.throws(() => assertRigLock(rig, "live"), LockBreach);
-      rig.shoulderR.add(rig.core);
-
       rig.nerve.uniforms.uDensity.value = 0.859;
       assert.throws(() => assertRigLock(rig, "live"), LockBreach);
       rig.nerve.uniforms.uDensity.value = 0.86;
       assert.doesNotThrow(() => assertRigLock(rig, "live"));
       rig.nerve.uniforms.uDensity.value = 1;
-      rig.signal.uniforms.uDensity.value = 0.9;
-      assert.throws(() => assertRigLock(rig, "live"), LockBreach);
-      rig.signal.uniforms.uDensity.value = 1;
 
       rig.chest.position.y = LOCK.proportions.chestY + 0.2;
       assert.throws(() => assertRigLock(rig, "live"), LockBreach);
@@ -721,7 +705,7 @@ describe("stability read", () => {
       assert.equal(LOCK.void, "#000000");
       assert.equal(LOCK.strom, "#3AD7FF");
       assert.equal(LOCK.kern, "#E7FBFF");
-      assert.equal(LOCK.signal, "#FF3B4E");
+      assert.equal("signal" in LOCK, false);
       assert.equal(JSON.stringify(LOCK_CANON).includes("FF3B4E"), false);
       assert.equal(LOCK.proportions.headRadius, 0.105);
       assert.equal(rig.shoulderR.position.x, -LOCK.proportions.shoulderX);
