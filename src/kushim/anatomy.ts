@@ -2203,10 +2203,12 @@ function fillHand(ribbon: Ribbon, side: 1 | -1, ox: number) {
       0.55,
     );
   }
+  // Metacarpal bar. ±0.032 sat in the old wrist ball; without it the ends
+  // leave the palm ellipse (inside about ±0.019 at this depth).
   pushCurve(
     ribbon,
     8,
-    (u) => new THREE.Vector3(ox + (-0.032 + u * 0.064) * side, -0.05, 0.006),
+    (u) => new THREE.Vector3(ox + (-0.018 + u * 0.036) * side, -0.05, 0.006),
     0.22,
     0.00014,
     0.24,
