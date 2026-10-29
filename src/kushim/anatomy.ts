@@ -1792,7 +1792,8 @@ function fillLimb(
     const rz = reachZ(u);
     const k = Math.min(cap, Math.max(0, rad));
     return new THREE.Vector3(
-      axis(u) + clamp(Math.cos(ang) * rx * k, rx * cap),
+      // Flip by side so the two limbs are mirror images, not one cloud shifted.
+      axis(u) + clamp(side * Math.cos(ang) * rx * k, rx * cap),
       -u * length,
       clamp(Math.sin(ang) * rz * k, rz * cap),
     );
@@ -1927,6 +1928,8 @@ function calfFrame(t: number, side: 1 | -1) {
     }
   }
   if (!grooveFound) groove = { x: cx, z: cz - r * 0.16 };
+  // Mirrored candidates tie on z. Center the lane so both calves mirror.
+  else groove = { x: cx, z: groove.z };
 
   return {
     cx,
@@ -2056,7 +2059,7 @@ function fillHand(ribbon: Ribbon, side: 1 | -1, ox: number) {
   pushCurve(
     ribbon,
     8,
-    (u) => new THREE.Vector3(ox + (-0.032 + u * 0.064) * side, -0.05, 0.01),
+    (u) => new THREE.Vector3(ox + (-0.032 + u * 0.064) * side, -0.05, 0.006),
     0.22,
     0.00014,
     0.24,

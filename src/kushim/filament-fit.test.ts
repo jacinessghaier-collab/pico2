@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
-import type { BufferGeometry, Mesh, Object3D } from "three";
+import { Vector3, type BufferGeometry, type Mesh, type Object3D } from "three";
 import { createKushim, type Rig } from "@/kushim/anatomy";
 import { LOCK } from "@/kushim/lock";
 
@@ -240,6 +240,56 @@ describe("filament fit", () => {
       assert.ok(nerveWidth < glassWidth + 0.004, `calf filaments ${nerveWidth} wider than glass ${glassWidth}`);
       const posterior = belly.filter((p) => p.z < -0.03);
       assert.ok(posterior.length >= 8, `posterior calf filaments ${posterior.length}`);
+    }
+  });
+
+  /**
+   * Scene units are meters (LOCK.proportions: hip at 1, figure about 1.8 tall),
+   * so 0.001 is 1 mm. Left and right nerves are built in the same order, so
+   * vertex i on one side must sit on the X-mirror of vertex i on the other.
+   */
+  it("mirrors left and right limb and calf filaments within 1 mm", () => {
+    const MIRROR_TOL = 0.001;
+    const worldNerves = (parent: Object3D) => {
+      parent.updateWorldMatrix(true, false);
+      const out: Vector3[] = [];
+      for (const child of parent.children) {
+        const mesh = child as Mesh;
+        if (!mesh.isMesh || mesh.material !== rig.nerve) continue;
+        mesh.updateWorldMatrix(false, false);
+        const pos = mesh.geometry.getAttribute("position");
+        for (let i = 0; i < pos.count; i++) {
+          out.push(new Vector3().fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld));
+        }
+      }
+      return out;
+    };
+    const hips = rig.root.children.filter((child) => child.userData.lockKey === "hip");
+    const hipL = hips.find((hip) => hip.userData.lockSide === 1);
+    const hipR = hips.find((hip) => hip.userData.lockSide === -1);
+    if (!hipL || !hipR) throw new Error("hips missing");
+    const kneeOf = (hip: Object3D) => {
+      const knee = hip.children.find((child) => child.userData.lockKey === "knee");
+      if (!knee) throw new Error("knee missing");
+      return knee;
+    };
+    const pairs: Array<[string, Object3D, Object3D]> = [
+      ["upper arm", rig.shoulderL, rig.shoulderR],
+      ["forearm", rig.elbowL, rig.elbowR],
+      ["hand", rig.wristL, rig.wristR],
+      ["thigh", hipL, hipR],
+      ["calf", kneeOf(hipL), kneeOf(hipR)],
+    ];
+    for (const [name, left, right] of pairs) {
+      const a = worldNerves(left);
+      const b = worldNerves(right);
+      assert.ok(a.length > 0, `${name} has no filaments`);
+      assert.equal(a.length, b.length, `${name} filament counts differ`);
+      let worst = 0;
+      for (let i = 0; i < a.length; i++) {
+        worst = Math.max(worst, Math.hypot(a[i].x + b[i].x, a[i].y - b[i].y, a[i].z - b[i].z));
+      }
+      assert.ok(worst <= MIRROR_TOL, `${name} filaments off mirror by ${worst} m`);
     }
   });
 });
