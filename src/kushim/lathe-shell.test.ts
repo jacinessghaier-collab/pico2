@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 import * as THREE from "three";
 import type { BufferGeometry, Mesh, Object3D } from "three";
-import { createKushim, SHOULDER_LINE, torsoShellAt, type Rig } from "@/kushim/anatomy";
+import { ARMPIT_Y, createKushim, SHOULDER_LINE, torsoShellAt, upperArmStation, type Rig } from "@/kushim/anatomy";
 import { LOCK } from "@/kushim/lock";
 
 before(() => {
@@ -65,20 +65,39 @@ describe("lathe shell", () => {
     for (const shoulder of [rig.shoulderL, rig.shoulderR]) {
       const geo = tubeOn(shoulder);
       const pos = geo.getAttribute("position");
+      const fade = geo.getAttribute("aFade");
       let inside = 0;
       let worst = 0;
       shoulder.updateWorldMatrix(true, true);
       for (let i = 0; i < pos.count; i++) {
         v.fromBufferAttribute(pos as THREE.BufferAttribute, i).applyMatrix4(shoulder.matrixWorld);
-        const shell = torsoShellAt(v.y - chestY);
+        const localY = v.y - chestY;
+        const shell = torsoShellAt(localY);
         const e = (v.x * v.x) / (shell.x * shell.x) + (v.z * v.z) / (shell.z * shell.z);
-        if (e < 1) {
+        const drawn = !fade || fade.getX(i) >= 0.45;
+        // Below the armpit the whole tube stays outside. In the deltoid only the drawn shell does.
+        if ((drawn || localY < ARMPIT_Y) && e < 1) {
           inside += 1;
           worst = Math.max(worst, 1 - e);
         }
       }
       assert.equal(inside, 0, `${inside} upper-arm points inside the torso, depth ${worst.toFixed(4)}`);
     }
+    let onDeltoid = 0;
+    let belowArmpit = 0;
+    for (let i = 0; i <= 24; i++) {
+      const s = upperArmStation(i / 24);
+      const gap = s.center - s.r - s.torsoHalf;
+      if (s.y >= ARMPIT_Y + 0.08) {
+        onDeltoid += 1;
+        assert.ok(gap < 0.004, `gap ${gap.toFixed(4)} at y ${s.y.toFixed(3)} separates the deltoid`);
+      }
+      if (s.y <= 0.05) {
+        belowArmpit += 1;
+        assert.ok(gap > 0.012, `gap ${gap.toFixed(4)} at y ${s.y.toFixed(3)} never opens under the armpit`);
+      }
+    }
+    assert.ok(onDeltoid >= 3 && belowArmpit >= 4, `samples deltoid ${onDeltoid} waist ${belowArmpit}`);
   });
 
   it("keeps the chest at least as wide as the hip and the thigh inside it", () => {
