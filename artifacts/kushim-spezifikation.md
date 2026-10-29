@@ -1,26 +1,31 @@
 # KUSHIM-SPEZIFIKATION
-Stand: Stufe 10 von 10 abgeschlossen. Der Scouting-Plan ist verworfen. Die Figur bleibt. Satzmelodie bleibt ausgesetzt. Eine elfte Stufe gibt es nicht.
-Gesperrte Bildausgabe bleibt `kushim-aussehen-masterprompt.md`. Silhouette, Farben, Signal, Kamera nicht neu erfinden.
+Stand: Stufe 10 (Scouting verworfen) ist erledigt. Das setzt keinen nächsten Schritt. Jacin entscheidet die nächsten Schritte. Satzmelodie bleibt ausgesetzt.
+Bindende Bildreferenz ist 00-ZIEL in `kushim-aussehen-masterprompt.md`. Stufe 3 Glas liegt schon auf main (#38), nicht offen.
+
+## Referenz 00-ZIEL
+Durchsichtiger Glaskörper, außen cyan/türkiser Fresnel-Rand, innen dichtes Limetten-/Gelbgrün-Filamentnetz (dicht im Rumpf, feiner an den Gliedern). Kopf ohne Gesicht, mit weichem unterem Dunst. Dezenter Bodenreflex und Fuß-Glow. Dreiviertelansicht. Athletischer Mann, etwa 7,5–8 Kopflängen, breite Schultern, schmale Taille. Menschliche Proportionen, exakt links/rechts symmetrisch nach 01-VORLAGE-zusatz.jpg. Kein roter Schulterknoten, keine Gelenkkugeln, keine Farbblöcke, keine ungleiche Wade.
+
+Kein GLB, kein Anny, kein MPFB2, kein MakeHuman, keine Orbit-Steuerung, kein Bloom.
 
 ## Körper
-Durchsichtiger erwachsener Mensch, männlich gelesen, neutral, nicht sexualisiert. Kein Geist, keine Rüstung, kein Roboter, kein Comic. Proportion 8,0 Kopflängen: Kopf; Kinn bis Brustkern; Brustkern bis Nabel; Nabel bis Schritt; Schritt bis Kniescheibe; Kniescheibe bis Fußsohle im klassischen Acht-Kopf-Takt, Beine nicht überlängt. Schulterbreite 2,0 Kopfbreiten. Füße zusammen, Gewicht mittig auf beiden Füßen, kein Hüftschub. Arme etwa 8° vom Rumpf, Ellbogen weich (etwa 12°), Handflächen offen zum Betrachter, fünf getrennte Finger. Die Fingerspitzen enden bei hängendem Arm auf der Oberschenkelmitte, nicht am Knie. Anatomie nur als Licht: Schädel mit Braue, Nasenrücken, Lippen, Ohren; Hals; Schlüsselbeine; acht Rippen; Brustbein; Wirbelsäule als senkrechter Kanal; Becken; Oberschenkel, Knie, Schienbein, Füße, Zehen. Keine Fleischmuskeln, keine Organe. Kamera: ganze Figur, gerade, Augenhöhe, leichtes Tele, Kopfraum und wenig Platz unter den Füßen. Hintergrund reines Schwarz, kein Boden.
+Durchsichtiger erwachsener Mann, athletisch, neutral, nicht sexualisiert. Kein Geist, keine Rüstung, kein Roboter, kein Comic. Etwa 7,5–8 Kopflängen, breite Schultern, schmale Taille, Beine nicht überlängt. Menschliche Proportionen, exakt links/rechts symmetrisch nach 01-VORLAGE-zusatz.jpg. Beide Seiten sind Spiegel, die Waden eingeschlossen. Gewicht mittig. Kamera: ganze Figur, Dreiviertel, Augenhöhe, leichtes Tele, Kopfraum. Dezenter Bodenreflex und Fuß-Glow.
 
-Atmung sitzt im Brustbein-Gelenk, nicht in einer Skalierung des Brustkorbs. 14 Züge pro Minute. Einatmen 40 % des Zyklus, Ausatmen 60 % (1 : 1,5), damit das Gewicht länger unten ruht. Spitzenhub 0,02 rad (etwa 1,1°) nur nach hinten-oben am Brustbein, Schultern und Schlüsselbeine bleiben liegen. Im Schweigen bleibt der Hub bei 75 % sichtbar; Lautstärke hebt nur die Amplitude bis 100 %, nie das Tempo. Der rote Schulterring atmet nicht mit.
+Atmung sitzt im Brustbein-Gelenk, nicht in einer Skalierung des Brustkorbs. 14 Züge pro Minute. Einatmen 40 % des Zyklus, Ausatmen 60 % (1 : 1,5), damit das Gewicht länger unten ruht. Spitzenhub 0,02 rad (etwa 1,1°) nur nach hinten-oben am Brustbein, Schultern und Schlüsselbeine bleiben liegen. Im Schweigen bleibt der Hub bei 75 % sichtbar; Lautstärke hebt nur die Amplitude bis 100 %, nie das Tempo. Es gibt keinen roten Schulterknoten.
 
 ## Material
-Glasklar, Transmission, keine milchige Hülle, keine Haut, kein Stoff, kein Haar. Die Körperhülle ist ein dünnes klares Medium, kein Glasblock. Optische Dicke 0,02 (vorher 0,25): Schwarz scheint durch, die Silhouette bleibt, Filamente bleiben die Anatomie. Transmission bleibt 0,94, Rauheit 0,06, Metall 0, Opazität 1. Licht nur emissiv. Augen sind zwei kleine hellere Punkte, keine Augäpfel. Der Stirnpunkt ist nicht das Auge.
+Glasklar, Transmission, keine milchige Hülle, keine Haut, kein Stoff, kein Haar. Die Körperhülle ist ein dünnes klares Medium, kein Glasblock. Außen cyan/türkiser Fresnel-Rand. Stufe 3 Glas liegt schon auf main (#38), nicht offen. Optische Dicke 0,02 (vorher 0,25): die Silhouette bleibt, Filamente bleiben die Anatomie. Transmission bleibt 0,94, Rauheit 0,06, Metall 0, Opazität 1. Licht nur emissiv. Kopf ohne Gesicht, mit weichem unterem Dunst. Keine Augäpfel.
 
 ## Stromflüsse
-Nur Cyan auf Schwarz. Keine Wolke. Feine, leicht unterbrochene Filamente auf sechs Pfaden, alle vom Brustkern nach außen: Brust–Hals–Kopf, Brust–Wirbelsäule–Becken, beide Arme bis in die Hand, beide Beine bis in den Fuß. Ein Filament ist ein Strich aus vier Punkten mit festem seitlichem Abstand zur Knochenlinie (seitliche Drift 0). Radius Rumpf bis 0,10, Gliedmaßen bis 0,042, Hals 0,045. 62 % der Punkte liegen in einem Fenster von 0,14 um die Gelenke. Tempo 0,10 Pfadlängen pro Sekunde, unabhängig von der Stimme. Helligkeit ist Opazität 0,50 in Ruhe; Sprache hebt sie glatt bis 0,72, Anstieg 0,35 s, Abfall 0,80 s. Flackern 0, kein Sinus. Weiß-cyaner Stern im Brustkorb, kleiner harter Punkt derselben Farbe auf der Stirn. Ein rotes Signal nur an der rechten Schulter der Figur (links im Bild): kompakter Kern im Deltamuskel, dünner Funkenring. Kein zweites Rot. Der Schulterring folgt dieser Helligkeit nicht.
+Innen dichtes Limetten-/Gelbgrün-Filamentnetz, dicht im Rumpf, feiner an Armen und Beinen, links und rechts gleich. Kein roter Schulterknoten, keine Gelenkkugeln, keine Farbblöcke.
 
 ## Aura
-Schmale Cyan-Aura, enger als die Silhouette, kein Nebel, keine zweite Hülle, die den Körper zudeckt. Der Radius steht: Skalierung 1, kein Sinus, kein Mitwachsen mit Atem oder Stimme. Im Idle keine eigene Schwingung. Helligkeit (emissiv) 0,12, daraus Opazität 0,066. Sprache hebt nur diese Helligkeit glatt bis 0,20, Opazität dann 0,11. Anstieg 0,45 s, Abfall 1,10 s, langsamer als die Filamente, damit die Aura ruhig bleibt. Der rote Schulterring gehört nicht zur Aura. Die Aura blinzelt nicht mit.
+Der äußere Rand ist der cyan/türkise Fresnel, keine zweite Hülle, kein Bloom, kein Nebel, der den Körper zudeckt. Der Radius steht: Skalierung 1, kein Sinus, kein Mitwachsen mit Atem oder Stimme. Im Idle keine eigene Schwingung. Helligkeit (emissiv) 0,12, daraus Opazität 0,066. Sprache hebt nur diese Helligkeit glatt bis 0,20, Opazität dann 0,11. Anstieg 0,45 s, Abfall 1,10 s, langsamer als die Filamente, damit der Rand ruhig bleibt. Kein roter Schulterknoten.
 
 ## Gesten
-Nur die Grundhaltung. Keine Geste auf Silben. Nichts Übertriebenes. Der Atem ist keine Geste. Das Blinzeln ist keine Geste.
+Nur die Grundhaltung. Keine Geste auf Silben. Nichts Übertriebenes. Der Atem ist keine Geste.
 
 ## Idle
-Ruhiger Stand, Gewicht mittig, Blick geradeaus auf den Betrachter, Kopf ohne Drehung. Dauernde Ruhe-Atmung wie oben. Die zwei Augenpunkte — nicht der Stirnpunkt, nicht der Schulterring — dimmen unregelmäßig: Abstand gleichverteilt 3,6 bis 6,4 Sekunden (Mittel etwa zwölf Mal pro Minute, kein Metronom), Schließdauer 0,12 Sekunden, Helligkeit in dieser Zeit auf 0,15 der Ruhe, dann sofort zurück. Beide Punkte gemeinsam. Kein Lid, kein Augapfel, keine Kopplung an Silbe, Atem, Stimme oder Aura. Der rote Schulterring weitet sich nur einmal, wenn ein Clip Bewegung verlangt, und wird dünner; der Kern bleibt. Kein Gang, keine Drehung, keine Kamerafahrt, keine Gewichtsverlagerung.
+Ruhiger Stand, Gewicht mittig. Kopf ohne Gesicht, weicher unterer Dunst. Kein roter Schulterknoten, keine Gelenkkugeln, keine Farbblöcke. Kein Gang, keine Kamerafahrt, keine Gewichtsverlagerung. Die Ansicht bleibt Dreiviertel.
 
 ## Gesprächsverhalten
 Grundzustand, noch nicht trainiert. Zuhören vor dem Antworten. Eine Sache pro Turn. Kein Mehr-Text.
@@ -29,10 +34,15 @@ Grundzustand, noch nicht trainiert. Zuhören vor dem Antworten. Eine Sache pro T
 Deutsch. Erst der Satz, dann die Nuance. Natürliche Pause. Kurz. Keine Imitation eines anderen Assistenten.
 
 ## Farbe
-Void #02060A. Strom #3AD7FF. Kern #E7FBFF. Signal #FF3B4E.
+Außen cyan/türkiser Fresnel-Rand. Innen Limette und Gelbgrün. Kein Rot als Schultersignal, keine Farbblöcke.
 
 ## Parameter
-body.headUnits = 8.0
+body.headUnits = 7.5..8
+body.shoulderBuild = broad
+body.waist = narrow
+body.symmetry = left-right
+body.proportion = 01-VORLAGE-zusatz.jpg
+body.view = three-quarter
 body.fingertipAnchor = "femur.mid"
 body.armAbductionDeg = 8
 body.elbowSoftDeg = 12
@@ -55,26 +65,6 @@ material.metalness = 0
 material.opacity = 1
 flow.paths = "chest-head, chest-hips, both-arms, both-legs"
 flow.lateralDrift = 0
-flow.torsoRadius = 0.10
-flow.limbRadius = 0.042
-flow.jointWindow = 0.14
-flow.speed = 0.10
-flow.idleOpacity = 0.50
-flow.speechOpacity = 0.72
-flow.attackSec = 0.35
-flow.releaseSec = 0.80
-flow.flickerHz = 0
-aura.scale = 1
-aura.idleEmissive = 0.12
-aura.speechEmissive = 0.20
-aura.opacityFactor = 0.55
-aura.attackSec = 0.45
-aura.releaseSec = 1.10
-aura.idleHz = 0
-idle.blinkIntervalSec = 3.6..6.4
-idle.blinkCloseSec = 0.12
-idle.blinkEyeGain = 0.15
-idle.blinkTargets = "eyes"
-idle.blinkCoupling = "none"
-idle.gaze = "camera"
+flow.density = "torso dense, limbs finer"
+flow.symmetry = "left-right"
 idle.weightShift = 0

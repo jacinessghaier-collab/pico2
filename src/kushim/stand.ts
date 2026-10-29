@@ -182,7 +182,7 @@ export const CHANGES: Change[] = [
     time: "18:40",
     step: 10,
     title: "Scouting verworfen",
-    body: "Der 10-Stufen-Plan (Weg A Anny und Space Colonization, Weg B MPFB2 und Qwen, Weg C Audio2Face) ersetzt die gesperrte Figur. Stufen 1 bis 6 liegen schon im prozeduralen Rig. Boden, Nebel, Orbit-Kamera, Bloom, Transmission-Buffer und ein GLB-Tausch wirft lock-check. Kein zweites Rig, kein zweiter Check. lock.ts bleibt. FIRST_PAUSE_MS bleibt 320. Satzmelodie bleibt ausgesetzt. Eine elfte Stufe gibt es nicht.",
+    body: "Der 10-Stufen-Plan (Weg A Anny und Space Colonization, Weg B MPFB2 und Qwen, Weg C Audio2Face) bleibt verworfen: kein GLB, kein Anny, kein MPFB2, kein MakeHuman, keine Orbit-Steuerung, kein Bloom. Referenz 00-ZIEL: durchsichtiger Glaskörper, cyan/türkiser Fresnel-Rand außen, dichtes Limetten-/Gelbgrün-Filamentnetz innen (dicht im Rumpf, feiner an den Gliedern), Kopf ohne Gesicht mit weichem unterem Dunst, dezenter Bodenreflex und Fuß-Glow, Dreiviertel, athletischer Mann etwa 7,5–8 Kopflängen, breite Schultern, schmale Taille, menschliche Proportionen, exakt links/rechts symmetrisch nach 01-VORLAGE-zusatz.jpg. Kein roter Schulterknoten, keine Gelenkkugeln, keine Farbblöcke, keine ungleiche Wade. Stufe 3 Glas liegt schon auf main (#38), nicht offen. Kein zweites Rig, kein zweiter Check. lock.ts bleibt. FIRST_PAUSE_MS bleibt 320. Satzmelodie bleibt ausgesetzt. Stufe 10 fertig setzt keinen nächsten Schritt. Jacin entscheidet die nächsten Schritte.",
     source: "Stundenplan",
   },
 ];
@@ -191,6 +191,6 @@ export const DONE_STEP = 10;
 export const NEXT_STEP = 10;
 export const NEXT_RUN_LABEL = "—";
 
-/** Hourly pipeline closed. The scouting rebuild was refused. Melody stays deferred. There is no stage 11. */
+/** Scout skip is recorded. It does not choose the next step. Jacin decides what follows. Melody stays deferred. */
 export const HOURLY_DONE = 10;
 export const HOURLY_NEXT = 10;
